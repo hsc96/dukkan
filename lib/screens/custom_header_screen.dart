@@ -24,7 +24,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
     // Örnek veri
     List<Map<String, dynamic>> customers = [
       {
-        "name": "Müşteri 1",
+        "name": "Müşteri 2",
         "currentBalance": 650,
         "totalBalance": 1100,
         "date": "19 Mayıs 2024",
@@ -63,7 +63,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         child: Stack(
           children: [
             Positioned(
-              top: 20.0,
+              top: 21.0,
               left: 0.0,
               right: 0.0,
               child: SingleChildScrollView(
