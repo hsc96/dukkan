@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/cupertino.dart'; // CupertinoIcons için gerekli import
 import '../utils/colors.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
-import 'firestore_service.dart'; // FirestoreService sınıfını içe aktar
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -14,65 +13,40 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  final FirestoreService _firestoreService = FirestoreService();
-  final ScrollController _scrollController = ScrollController();
   TextEditingController searchController = TextEditingController();
-  List<DocumentSnapshot> _customers = [];
+  List<String> customers = [];
   List<String> filteredCustomers = [];
-  bool _isLoading = false;
-  DocumentSnapshot? _lastDocument;
   String? selectedCustomer;
   String barcodeResult = "";
 
   @override
   void initState() {
     super.initState();
-    _fetchInitialData();
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
-        _fetchMoreData();
-      }
-    });
-  }
-
-  Future<void> _fetchInitialData() async {
-    setState(() => _isLoading = true);
-    _firestoreService.fetchCustomers().listen((data) {
-      setState(() {
-        _customers = data;
-        filteredCustomers = _customers.map((doc) => doc['Açıklama'] as String).toList();
-        if (_customers.isNotEmpty) {
-          _lastDocument = _customers.last;
-        }
-        _isLoading = false;
-      });
-    });
-  }
-
-  Future<void> _fetchMoreData() async {
-    if (_isLoading) return;
-    setState(() => _isLoading = true);
-    _firestoreService.fetchCustomers(startAfter: _lastDocument).listen((data) {
-      setState(() {
-        _customers.addAll(data);
-        filteredCustomers = _customers.map((doc) => doc['Açıklama'] as String).toList();
-        if (_customers.isNotEmpty) {
-          _lastDocument = _customers.last;
-        }
-        _isLoading = false;
-      });
-    });
+    fetchCustomers();
   }
 
   void filterCustomers(String query) {
     setState(() {
-      filteredCustomers = _customers
-          .map((doc) => doc['Açıklama'] as String)
+      filteredCustomers = customers
           .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
       }
+    });
+  }
+
+  Future<void> fetchCustomers() async {
+    var querySnapshot = await FirebaseFirestore.instance.collection('veritabanideneme').get();
+    var docs = querySnapshot.docs;
+    var descriptions = docs.map((doc) {
+      var data = doc.data() as Map<String, dynamic>;
+      return data['Açıklama'] ?? 'Açıklama bilgisi yok';
+    }).cast<String>().toList();
+
+    setState(() {
+      customers = descriptions;
+      filteredCustomers = descriptions;
     });
   }
 
@@ -151,14 +125,15 @@ class _ScanScreenState extends State<ScanScreen> {
           SizedBox(height: 30),
           Expanded(
             child: ListView.builder(
-              controller: _scrollController,
-              itemCount: filteredCustomers.length + 1,
+              itemCount: filteredCustomers.length,
               itemBuilder: (context, index) {
-                if (index == filteredCustomers.length) {
-                  return _isLoading ? Center(child: CircularProgressIndicator()) : Container();
-                }
                 return ListTile(
                   title: Text(filteredCustomers[index]),
+                  onTap: () {
+                    setState(() {
+                      selectedCustomer = filteredCustomers[index];
+                    });
+                  },
                 );
               },
             ),
@@ -167,11 +142,5 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
       bottomNavigationBar: CustomBottomBar(),
     );
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
   }
 }
