@@ -33,8 +33,7 @@ class _ScanScreenState extends State<ScanScreen> {
   void filterCustomers(String query) {
     setState(() {
       filteredCustomers = customers
-          .where((customer) =>
-          customer.toLowerCase().contains(query.toLowerCase()))
+          .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
@@ -43,16 +42,12 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> fetchCustomers() async {
-    var querySnapshot =
-    await FirebaseFirestore.instance.collection('veritabanideneme').get();
+    var querySnapshot = await FirebaseFirestore.instance.collection('veritabanideneme').get();
     var docs = querySnapshot.docs;
-    var descriptions = docs
-        .map((doc) {
+    var descriptions = docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
       return data['Açıklama'] ?? 'Açıklama bilgisi yok';
-    })
-        .cast<String>()
-        .toList();
+    }).cast<String>().toList();
 
     setState(() {
       customers = descriptions;
@@ -99,18 +94,29 @@ class _ScanScreenState extends State<ScanScreen> {
 
     if (docs.isNotEmpty) {
       var data = docs.first.data() as Map<String, dynamic>;
+      double fiyat = double.tryParse(data['Fiyat'].replaceAll(',', '.')) ?? 0.0;
+      double kur = 1.0;
+
+      if (data['Doviz'] == 'USD') {
+        kur = double.tryParse(dolarKur.replaceAll(',', '.')) ?? 1.0;
+      } else if (data['Doviz'] == 'Euro') {
+        kur = double.tryParse(euroKur.replaceAll(',', '.')) ?? 1.0;
+      }
+
+      double adetFiyati = fiyat * kur;
+
       var product = {
         'Kodu': data['Kodu'],
         'Detay': data['Detay'],
         'Adet': 1,
-        'AdetFiyati': 0,
-        'ToplamFiyat': 0
+        'AdetFiyati': adetFiyati,
+        'ToplamFiyati': adetFiyati
       };
+
       setState(() {
         scannedProducts.add(product);
       });
     } else {
-      // Barkod bulunamadıysa hata mesajı gösterebilirsiniz
       setState(() {
         barcodeResult = 'Ürün bulunamadı';
       });
@@ -119,7 +125,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
   void updateProductTotalPrice(Map<String, dynamic> product) {
     setState(() {
-      product['ToplamFiyat'] = product['Adet'] * product['AdetFiyati'];
+      product['ToplamFiyati'] = product['Adet'] * product['AdetFiyati'];
     });
   }
 
@@ -160,12 +166,6 @@ class _ScanScreenState extends State<ScanScreen> {
                     child: Text(value),
                   );
                 }).toList(),
-              ),
-              Column(
-                children: [
-                  Text('USD: $dolarKur'),
-                  Text('EUR: $euroKur'),
-                ],
               ),
             ],
           ),
@@ -215,27 +215,24 @@ class _ScanScreenState extends State<ScanScreen> {
                         },
                       ),
                     ),
-                    DataCell(
-                      TextFormField(
-                        initialValue: product['AdetFiyati'].toString(),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setState(() {
-                            product['AdetFiyati'] = double.tryParse(value) ?? 0;
-                            updateProductTotalPrice(product);
-                          });
-                        },
-                      ),
-                    ),
-                    DataCell(Text(product['ToplamFiyat'].toString())),
+                    DataCell(Text(product['AdetFiyati'].toStringAsFixed(2))),
+                    DataCell(Text(product['ToplamFiyati'].toStringAsFixed(2))),
                   ]);
                 }).toList(),
               ),
             ),
-
           ),
-
-
+          SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
