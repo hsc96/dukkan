@@ -21,7 +21,7 @@ class AwaitedProductsScreen extends StatelessWidget {
             ),
             SizedBox(height: 20),
             FutureBuilder<QuerySnapshot>(
-              future: FirebaseFirestore.instance.collection('veritabanideneme').get(),
+              future: FirebaseFirestore.instance.collection('urunler').get(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return CircularProgressIndicator();
@@ -32,15 +32,32 @@ class AwaitedProductsScreen extends StatelessWidget {
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return Text('Veri bulunamadı');
                 }
+
                 var docs = snapshot.data!.docs;
-                var descriptions = docs.map((doc) {
+                docs.shuffle(); // Rastgele sıralama
+
+                var products = docs.take(3).map((doc) {
                   var data = doc.data() as Map<String, dynamic>;
-                  return data['Açıklama'] ?? 'Açıklama bilgisi yok';
+                  return {
+                    'Ana Birim': data['Ana Birim'],
+                    'Barkod': data['Barkod'],
+                    'Detay': data['Detay'],
+                    'Gercek Stok': data['Gercek Stok'],
+                    'Kodu': data['Kodu'],
+                  };
                 }).toList();
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: descriptions.take(3).map((desc) => Text(desc)).toList(),
+                  children: products.map((product) {
+                    return Card(
+                      child: ListTile(
+                        title: Text(product['Detay']),
+                        subtitle: Text('Barkod: ${product['Barkod']}\nStok: ${product['Gercek Stok']}'),
+                        trailing: Text('Kod: ${product['Kodu']}'),
+                      ),
+                    );
+                  }).toList(),
                 );
               },
             ),
