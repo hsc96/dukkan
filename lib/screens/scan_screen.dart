@@ -71,6 +71,17 @@ class _ScanScreenState extends State<ScanScreen> {
       body: Column(
         children: [
           SizedBox(height: 20),
+          if (selectedCustomer != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10.0),
+              child: Text(
+                'Seçilen Müşteri: $selectedCustomer',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -122,8 +133,6 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ),
           ),
-          SizedBox(height: 30),
-
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
