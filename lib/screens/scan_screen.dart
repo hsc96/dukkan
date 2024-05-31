@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
-import 'package:flutter/cupertino.dart'; // CupertinoIcons için gerekli import
+import 'package:flutter/cupertino.dart';
 import '../utils/colors.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
+import 'dovizservice.dart';
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -18,18 +19,21 @@ class _ScanScreenState extends State<ScanScreen> {
   List<String> filteredCustomers = [];
   String? selectedCustomer;
   String barcodeResult = "";
-  Map<String, String>? scannedProduct;
+  String dolarKur = "";
+  String euroKur = "";
 
   @override
   void initState() {
     super.initState();
     fetchCustomers();
+    fetchDovizKur();
   }
 
   void filterCustomers(String query) {
     setState(() {
       filteredCustomers = customers
-          .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
+          .where((customer) =>
+          customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
@@ -38,12 +42,13 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> fetchCustomers() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection('veritabanideneme').get();
+    var querySnapshot = await FirebaseFirestore.instance.collection(
+        'veritabanideneme').get();
     var docs = querySnapshot.docs;
     var descriptions = docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
       return data['Açıklama'] ?? 'Açıklama bilgisi yok';
-    }).cast<String>().toList(); // List<String> türüne dönüştür
+    }).cast<String>().toList();
 
     setState(() {
       customers = descriptions;
@@ -51,37 +56,31 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  Future<void> fetchDovizKur() async {
+    DovizService dovizService = DovizService();
+    try {
+      var kurlar = await dovizService.fetchDovizKur();
+      setState(() {
+        dolarKur = kurlar['dolar']!;
+        euroKur = kurlar['euro']!;
+      });
+    } catch (e) {
+      setState(() {
+        dolarKur = 'Hata';
+        euroKur = 'Hata';
+      });
+    }
+  }
+
   Future<void> scanBarcode() async {
     try {
       var result = await BarcodeScanner.scan();
       setState(() {
         barcodeResult = result.rawContent;
-        fetchProductDetails(barcodeResult);
       });
     } catch (e) {
       setState(() {
         barcodeResult = 'Hata: $e';
-      });
-    }
-  }
-
-  Future<void> fetchProductDetails(String barcode) async {
-    var querySnapshot = await FirebaseFirestore.instance
-        .collection('urunler')
-        .where('Barkod', isEqualTo: barcode)
-        .get();
-    if (querySnapshot.docs.isNotEmpty) {
-      var doc = querySnapshot.docs.first;
-      var data = doc.data() as Map<String, dynamic>;
-      setState(() {
-        scannedProduct = {
-          'Kodu': data['Kodu'],
-          'Detay': data['Detay'],
-        };
-      });
-    } else {
-      setState(() {
-        scannedProduct = null;
       });
     }
   }
@@ -95,13 +94,13 @@ class _ScanScreenState extends State<ScanScreen> {
         children: [
           SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: Icon(CupertinoIcons.barcode, size: 24, color: colorTheme5),
+                icon: Icon(
+                    CupertinoIcons.barcode, size: 24, color: colorTheme5),
                 onPressed: scanBarcode,
               ),
-              SizedBox(width: 10),
               DropdownButton<String>(
                 hint: Text('MÜŞTERİ SEÇ'),
                 value: selectedCustomer,
@@ -118,7 +117,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     selectedCustomer = newValue;
                   });
                 },
-                items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
+                items: filteredCustomers.map<DropdownMenuItem<String>>((
+                    String value) {
                   return DropdownMenuItem<String>(
                     value: value,
                     child: Text(value),
@@ -146,25 +146,27 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          if (scannedProduct != null) ...[
-            Text(
-              'Tarama Sonucu',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Tablo ve diğer UI bileşenleri burada olacak.
+                ],
+              ),
             ),
-            SizedBox(height: 10),
-            DataTable(
-              columns: [
-                DataColumn(label: Text('Kodu')),
-                DataColumn(label: Text('Detay')),
-              ],
-              rows: [
-                DataRow(cells: [
-                  DataCell(Text(scannedProduct!['Kodu']!)),
-                  DataCell(Text(scannedProduct!['Detay']!)),
-                ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
               ],
             ),
-          ],
+          ),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
