@@ -123,21 +123,7 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          Expanded(
-            child: ListView.builder(
-              itemCount: filteredCustomers.length,
-              itemBuilder: (context, index) {
-                return ListTile(
-                  title: Text(filteredCustomers[index]),
-                  onTap: () {
-                    setState(() {
-                      selectedCustomer = filteredCustomers[index];
-                    });
-                  },
-                );
-              },
-            ),
-          ),
+
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
