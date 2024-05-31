@@ -18,6 +18,7 @@ class _ScanScreenState extends State<ScanScreen> {
   List<String> filteredCustomers = [];
   String? selectedCustomer;
   String barcodeResult = "";
+  Map<String, String>? scannedProduct;
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _ScanScreenState extends State<ScanScreen> {
     var descriptions = docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
       return data['Açıklama'] ?? 'Açıklama bilgisi yok';
-    }).cast<String>().toList();
+    }).cast<String>().toList(); // List<String> türüne dönüştür
 
     setState(() {
       customers = descriptions;
@@ -55,10 +56,32 @@ class _ScanScreenState extends State<ScanScreen> {
       var result = await BarcodeScanner.scan();
       setState(() {
         barcodeResult = result.rawContent;
+        fetchProductDetails(barcodeResult);
       });
     } catch (e) {
       setState(() {
         barcodeResult = 'Hata: $e';
+      });
+    }
+  }
+
+  Future<void> fetchProductDetails(String barcode) async {
+    var querySnapshot = await FirebaseFirestore.instance
+        .collection('urunler')
+        .where('Barkod', isEqualTo: barcode)
+        .get();
+    if (querySnapshot.docs.isNotEmpty) {
+      var doc = querySnapshot.docs.first;
+      var data = doc.data() as Map<String, dynamic>;
+      setState(() {
+        scannedProduct = {
+          'Kodu': data['Kodu'],
+          'Detay': data['Detay'],
+        };
+      });
+    } else {
+      setState(() {
+        scannedProduct = null;
       });
     }
   }
@@ -71,17 +94,6 @@ class _ScanScreenState extends State<ScanScreen> {
       body: Column(
         children: [
           SizedBox(height: 20),
-          if (selectedCustomer != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10.0),
-              child: Text(
-                'Seçilen Müşteri: $selectedCustomer',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -133,6 +145,26 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
             ),
           ),
+          SizedBox(height: 30),
+          if (scannedProduct != null) ...[
+            Text(
+              'Tarama Sonucu',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            DataTable(
+              columns: [
+                DataColumn(label: Text('Kodu')),
+                DataColumn(label: Text('Detay')),
+              ],
+              rows: [
+                DataRow(cells: [
+                  DataCell(Text(scannedProduct!['Kodu']!)),
+                  DataCell(Text(scannedProduct!['Detay']!)),
+                ]),
+              ],
+            ),
+          ],
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
