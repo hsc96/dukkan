@@ -21,6 +21,7 @@ class _ScanScreenState extends State<ScanScreen> {
   String barcodeResult = "";
   String dolarKur = "";
   String euroKur = "";
+  List<Map<String, dynamic>> scannedProducts = [];
 
   @override
   void initState() {
@@ -42,13 +43,16 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> fetchCustomers() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection(
-        'veritabanideneme').get();
+    var querySnapshot =
+    await FirebaseFirestore.instance.collection('veritabanideneme').get();
     var docs = querySnapshot.docs;
-    var descriptions = docs.map((doc) {
+    var descriptions = docs
+        .map((doc) {
       var data = doc.data() as Map<String, dynamic>;
       return data['Açıklama'] ?? 'Açıklama bilgisi yok';
-    }).cast<String>().toList();
+    })
+        .cast<String>()
+        .toList();
 
     setState(() {
       customers = descriptions;
@@ -78,11 +82,45 @@ class _ScanScreenState extends State<ScanScreen> {
       setState(() {
         barcodeResult = result.rawContent;
       });
+      await fetchProductDetails(barcodeResult);
     } catch (e) {
       setState(() {
         barcodeResult = 'Hata: $e';
       });
     }
+  }
+
+  Future<void> fetchProductDetails(String barcode) async {
+    var querySnapshot = await FirebaseFirestore.instance
+        .collection('urunler')
+        .where('Barkod', isEqualTo: barcode)
+        .get();
+    var docs = querySnapshot.docs;
+
+    if (docs.isNotEmpty) {
+      var data = docs.first.data() as Map<String, dynamic>;
+      var product = {
+        'Kodu': data['Kodu'],
+        'Detay': data['Detay'],
+        'Adet': 1,
+        'AdetFiyati': 0,
+        'ToplamFiyat': 0
+      };
+      setState(() {
+        scannedProducts.add(product);
+      });
+    } else {
+      // Barkod bulunamadıysa hata mesajı gösterebilirsiniz
+      setState(() {
+        barcodeResult = 'Ürün bulunamadı';
+      });
+    }
+  }
+
+  void updateProductTotalPrice(Map<String, dynamic> product) {
+    setState(() {
+      product['ToplamFiyat'] = product['Adet'] * product['AdetFiyati'];
+    });
   }
 
   @override
@@ -97,8 +135,7 @@ class _ScanScreenState extends State<ScanScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: Icon(
-                    CupertinoIcons.barcode, size: 24, color: colorTheme5),
+                icon: Icon(CupertinoIcons.barcode, size: 24, color: colorTheme5),
                 onPressed: scanBarcode,
               ),
               DropdownButton<String>(
@@ -117,13 +154,18 @@ class _ScanScreenState extends State<ScanScreen> {
                     selectedCustomer = newValue;
                   });
                 },
-                items: filteredCustomers.map<DropdownMenuItem<String>>((
-                    String value) {
+                items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
                   return DropdownMenuItem<String>(
                     value: value,
                     child: Text(value),
                   );
                 }).toList(),
+              ),
+              Column(
+                children: [
+                  Text('USD: $dolarKur'),
+                  Text('EUR: $euroKur'),
+                ],
               ),
             ],
           ),
@@ -148,25 +190,52 @@ class _ScanScreenState extends State<ScanScreen> {
           SizedBox(height: 30),
           Expanded(
             child: SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // Tablo ve diğer UI bileşenleri burada olacak.
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: [
+                  DataColumn(label: Text('Kodu')),
+                  DataColumn(label: Text('Detay')),
+                  DataColumn(label: Text('Adet')),
+                  DataColumn(label: Text('Adet Fiyatı')),
+                  DataColumn(label: Text('Toplam Fiyatı')),
                 ],
+                rows: scannedProducts.map((product) {
+                  return DataRow(cells: [
+                    DataCell(Text(product['Kodu'])),
+                    DataCell(Text(product['Detay'])),
+                    DataCell(
+                      TextFormField(
+                        initialValue: product['Adet'].toString(),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setState(() {
+                            product['Adet'] = int.tryParse(value) ?? 1;
+                            updateProductTotalPrice(product);
+                          });
+                        },
+                      ),
+                    ),
+                    DataCell(
+                      TextFormField(
+                        initialValue: product['AdetFiyati'].toString(),
+                        keyboardType: TextInputType.number,
+                        onChanged: (value) {
+                          setState(() {
+                            product['AdetFiyati'] = double.tryParse(value) ?? 0;
+                            updateProductTotalPrice(product);
+                          });
+                        },
+                      ),
+                    ),
+                    DataCell(Text(product['ToplamFiyat'].toString())),
+                  ]);
+                }).toList(),
               ),
             ),
+
           ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-              ],
-            ),
-          ),
+
+
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),

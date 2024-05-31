@@ -3,6 +3,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  Future<Map<String, dynamic>> getProductByBarcode(String barcode) async {
+    var querySnapshot = await _db.collection('urunler')
+        .where('Barkod', isEqualTo: barcode)
+        .limit(1)
+        .get();
+    if (querySnapshot.docs.isNotEmpty) {
+      return querySnapshot.docs.first.data();
+    } else {
+      throw Exception('Ürün bulunamadı');
+    }
+  }
+
   Future<List<String>> fetchFilteredCustomers(String query) async {
     QuerySnapshot querySnapshot = await _db.collection('veritabanideneme')
         .where('Açıklama', isGreaterThanOrEqualTo: query)
@@ -11,6 +23,6 @@ class FirestoreService {
     return querySnapshot.docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
       return data['Açıklama'] ?? 'Açıklama bilgisi yok';
-    }).cast<String>().toList(); // List<String> türüne dönüştür
+    }).cast<String>().toList();
   }
 }
