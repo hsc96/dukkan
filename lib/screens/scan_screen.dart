@@ -7,7 +7,7 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'dovizservice.dart';
-import 'firestore_service.dart'; // FirestoreService import
+import 'firestore_service.dart';
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -158,6 +158,35 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  void removeProduct(int index) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürünü Kaldır'),
+          content: Text('Bu ürünü kaldırmak istediğinizden emin misiniz?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Hayır'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  scannedProducts.removeAt(index);
+                });
+                Navigator.of(context).pop();
+              },
+              child: Text('Evet'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -196,12 +225,6 @@ class _ScanScreenState extends State<ScanScreen> {
                   );
                 }).toList(),
               ),
-              Column(
-                children: [
-                  Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                  Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                ],
-              ),
             ],
           ),
           SizedBox(height: 10),
@@ -232,6 +255,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 DataColumn(label: Text('Adet')),
                 DataColumn(label: Text('Adet Fiyatı')),
                 DataColumn(label: Text('Toplam Fiyat')),
+                DataColumn(label: Text('Sil')),
               ],
               rows: scannedProducts.map((product) {
                 int index = scannedProducts.indexOf(product);
@@ -250,6 +274,12 @@ class _ScanScreenState extends State<ScanScreen> {
                   ),
                   DataCell(Text(product['Adet Fiyatı'])),
                   DataCell(Text(product['Toplam Fiyat'])),
+                  DataCell(
+                    IconButton(
+                      icon: Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => removeProduct(index),
+                    ),
+                  ),
                 ]);
               }).toList(),
             ),
@@ -257,6 +287,17 @@ class _ScanScreenState extends State<ScanScreen> {
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
+      bottomSheet: Container(
+        padding: EdgeInsets.all(8),
+        color: Colors.grey[200],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+            Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+          ],
+        ),
+      ),
     );
   }
 }
