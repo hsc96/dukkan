@@ -7,6 +7,7 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'dovizservice.dart';
+import 'firestore_service.dart'; // FirestoreService import
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -23,6 +24,7 @@ class _ScanScreenState extends State<ScanScreen> {
   String euroKur = "";
 
   List<Map<String, dynamic>> scannedProducts = [];
+  final FirestoreService firestoreService = FirestoreService();
 
   @override
   void initState() {
@@ -88,34 +90,63 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> fetchProductDetails(String barcode) async {
-    var querySnapshot = await FirebaseFirestore.instance
-        .collection('urunler')
-        .where('Barkod', isEqualTo: barcode)
-        .get();
-
-    if (querySnapshot.docs.isNotEmpty) {
-      var productData = querySnapshot.docs.first.data() as Map<String, dynamic>;
-
-      double priceInTl = 0.0;
-      double price = double.tryParse(productData['Fiyat']) ?? 0.0;
-      String currency = productData['Doviz'] ?? '';
-
-      if (currency == 'Euro') {
-        priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
-      } else if (currency == 'Dolar') {
-        priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+    var products = await firestoreService.fetchProductsByBarcode(barcode);
+    if (products.isNotEmpty) {
+      if (products.length > 1) {
+        showProductSelectionDialog(products);
+      } else {
+        addProductToTable(products.first);
       }
-
-      setState(() {
-        scannedProducts.add({
-          'Kodu': productData['Kodu'] ?? '',
-          'Detay': productData['Detay'] ?? '',
-          'Adet': '1',
-          'Adet Fiyatı': priceInTl.toStringAsFixed(2),
-          'Toplam Fiyat': (priceInTl * 1).toStringAsFixed(2)
-        });
-      });
     }
+  }
+
+  void showProductSelectionDialog(List<Map<String, dynamic>> products) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürün Seçin'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: products.length,
+              itemBuilder: (BuildContext context, int index) {
+                return ListTile(
+                  title: Text(products[index]['Detay']),
+                  onTap: () {
+                    addProductToTable(products[index]);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void addProductToTable(Map<String, dynamic> productData) {
+    double priceInTl = 0.0;
+    double price = double.tryParse(productData['Fiyat']) ?? 0.0;
+    String currency = productData['Doviz'] ?? '';
+
+    if (currency == 'Euro') {
+      priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+    } else if (currency == 'Dolar') {
+      priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+    }
+
+    setState(() {
+      scannedProducts.add({
+        'Kodu': productData['Kodu'] ?? '',
+        'Detay': productData['Detay'] ?? '',
+        'Adet': '1',
+        'Adet Fiyatı': priceInTl.toStringAsFixed(2),
+        'Toplam Fiyat': (priceInTl * 1).toStringAsFixed(2)
+      });
+    });
   }
 
   void updateQuantity(int index, String quantity) {

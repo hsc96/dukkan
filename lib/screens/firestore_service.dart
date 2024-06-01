@@ -15,6 +15,16 @@ class FirestoreService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchProductsByBarcode(String barcode) async {
+    QuerySnapshot querySnapshot = await _db.collection('urunler')
+        .where('Barkod', isEqualTo: barcode)
+        .get();
+    return querySnapshot.docs.map((doc) {
+      var data = doc.data() as Map<String, dynamic>;
+      return data;
+    }).toList();
+  }
+
   Future<List<String>> fetchFilteredCustomers(String query) async {
     QuerySnapshot querySnapshot = await _db.collection('veritabanideneme')
         .where('Açıklama', isGreaterThanOrEqualTo: query)
