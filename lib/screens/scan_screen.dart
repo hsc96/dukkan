@@ -21,6 +21,7 @@ class _ScanScreenState extends State<ScanScreen> {
   String barcodeResult = "";
   String dolarKur = "";
   String euroKur = "";
+
   List<Map<String, dynamic>> scannedProducts = [];
 
   @override
@@ -33,7 +34,8 @@ class _ScanScreenState extends State<ScanScreen> {
   void filterCustomers(String query) {
     setState(() {
       filteredCustomers = customers
-          .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
+          .where((customer) =>
+          customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
@@ -77,7 +79,7 @@ class _ScanScreenState extends State<ScanScreen> {
       setState(() {
         barcodeResult = result.rawContent;
       });
-      await fetchProductDetails(barcodeResult);
+      fetchProductDetails(barcodeResult);
     } catch (e) {
       setState(() {
         barcodeResult = 'Hata: $e';
@@ -90,42 +92,38 @@ class _ScanScreenState extends State<ScanScreen> {
         .collection('urunler')
         .where('Barkod', isEqualTo: barcode)
         .get();
-    var docs = querySnapshot.docs;
 
-    if (docs.isNotEmpty) {
-      var data = docs.first.data() as Map<String, dynamic>;
-      double fiyat = double.tryParse(data['Fiyat'].replaceAll(',', '.')) ?? 0.0;
-      double kur = 1.0;
+    if (querySnapshot.docs.isNotEmpty) {
+      var productData = querySnapshot.docs.first.data() as Map<String, dynamic>;
 
-      if (data['Doviz'] == 'USD') {
-        kur = double.tryParse(dolarKur.replaceAll(',', '.')) ?? 1.0;
-      } else if (data['Doviz'] == 'Euro') {
-        kur = double.tryParse(euroKur.replaceAll(',', '.')) ?? 1.0;
+      double priceInTl = 0.0;
+      double price = double.tryParse(productData['Fiyat']) ?? 0.0;
+      String currency = productData['Doviz'] ?? '';
+
+      if (currency == 'Euro') {
+        priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+      } else if (currency == 'Dolar') {
+        priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
       }
 
-      double adetFiyati = fiyat * kur;
-
-      var product = {
-        'Kodu': data['Kodu'],
-        'Detay': data['Detay'],
-        'Adet': 1,
-        'AdetFiyati': adetFiyati,
-        'ToplamFiyati': adetFiyati
-      };
-
       setState(() {
-        scannedProducts.add(product);
-      });
-    } else {
-      setState(() {
-        barcodeResult = 'Ürün bulunamadı';
+        scannedProducts.add({
+          'Kodu': productData['Kodu'] ?? '',
+          'Detay': productData['Detay'] ?? '',
+          'Adet': '1',
+          'Adet Fiyatı': priceInTl.toStringAsFixed(2),
+          'Toplam Fiyat': (priceInTl * 1).toStringAsFixed(2)
+        });
       });
     }
   }
 
-  void updateProductTotalPrice(Map<String, dynamic> product) {
+  void updateQuantity(int index, String quantity) {
     setState(() {
-      product['ToplamFiyati'] = product['Adet'] * product['AdetFiyati'];
+      double adet = double.tryParse(quantity) ?? 1;
+      double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']) ?? 0.0;
+      scannedProducts[index]['Adet'] = quantity;
+      scannedProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
     });
   }
 
@@ -167,6 +165,12 @@ class _ScanScreenState extends State<ScanScreen> {
                   );
                 }).toList(),
               ),
+              Column(
+                children: [
+                  Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                  Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                ],
+              ),
             ],
           ),
           SizedBox(height: 10),
@@ -188,49 +192,35 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: [
-                  DataColumn(label: Text('Kodu')),
-                  DataColumn(label: Text('Detay')),
-                  DataColumn(label: Text('Adet')),
-                  DataColumn(label: Text('Adet Fiyatı')),
-                  DataColumn(label: Text('Toplam Fiyatı')),
-                ],
-                rows: scannedProducts.map((product) {
-                  return DataRow(cells: [
-                    DataCell(Text(product['Kodu'])),
-                    DataCell(Text(product['Detay'])),
-                    DataCell(
-                      TextFormField(
-                        initialValue: product['Adet'].toString(),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setState(() {
-                            product['Adet'] = int.tryParse(value) ?? 1;
-                            updateProductTotalPrice(product);
-                          });
-                        },
-                      ),
-                    ),
-                    DataCell(Text(product['AdetFiyati'].toStringAsFixed(2))),
-                    DataCell(Text(product['ToplamFiyati'].toStringAsFixed(2))),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          ),
-          SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: [
+                DataColumn(label: Text('Kodu')),
+                DataColumn(label: Text('Detay')),
+                DataColumn(label: Text('Adet')),
+                DataColumn(label: Text('Adet Fiyatı')),
+                DataColumn(label: Text('Toplam Fiyat')),
               ],
+              rows: scannedProducts.map((product) {
+                int index = scannedProducts.indexOf(product);
+                return DataRow(cells: [
+                  DataCell(Text(product['Kodu'])),
+                  DataCell(Text(product['Detay'])),
+                  DataCell(
+                    TextField(
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => updateQuantity(index, value),
+                      controller: TextEditingController()..text = product['Adet'],
+                    ),
+                  ),
+                  DataCell(Text(product['Adet Fiyatı'])),
+                  DataCell(Text(product['Toplam Fiyat'])),
+                ]);
+              }).toList(),
             ),
           ),
         ],
