@@ -153,6 +153,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'Adet Fiyatı': priceInTl.toStringAsFixed(2),
         'Toplam Fiyat': (priceInTl * 1).toStringAsFixed(2)
       });
+      updateTotalAndVat();
     });
   }
 
@@ -162,6 +163,7 @@ class _ScanScreenState extends State<ScanScreen> {
       double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']) ?? 0.0;
       scannedProducts[index]['Adet'] = quantity;
       scannedProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
+      updateTotalAndVat();
     });
   }
 
@@ -183,6 +185,7 @@ class _ScanScreenState extends State<ScanScreen> {
               onPressed: () {
                 setState(() {
                   scannedProducts.removeAt(index);
+                  updateTotalAndVat();
                 });
                 Navigator.of(context).pop();
               },
@@ -192,6 +195,49 @@ class _ScanScreenState extends State<ScanScreen> {
         );
       },
     );
+  }
+
+  void updateTotalAndVat() {
+    double total = 0.0;
+    scannedProducts.forEach((product) {
+      if (product['Kodu'] != '' && product['Toplam Fiyat'] != '') {
+        total += double.tryParse(product['Toplam Fiyat']) ?? 0.0;
+      }
+    });
+
+    double vat = total * 0.20;
+    double grandTotal = total + vat;
+
+    setState(() {
+      // Sadece bir kez "Toplam Tutar", "KDV %20" ve "Genel Toplam" eklemek için önceki eklemeleri kaldır
+      scannedProducts.removeWhere((product) =>
+      product['Adet Fiyatı'] == 'Toplam Tutar' ||
+          product['Adet Fiyatı'] == 'KDV %20' ||
+          product['Adet Fiyatı'] == 'Genel Toplam');
+
+      // "Toplam Tutar", "KDV %20" ve "Genel Toplam" ekle
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Toplam Tutar',
+        'Toplam Fiyat': total.toStringAsFixed(2),
+      });
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'KDV %20',
+        'Toplam Fiyat': vat.toStringAsFixed(2),
+      });
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Genel Toplam',
+        'Toplam Fiyat': grandTotal.toStringAsFixed(2),
+      });
+    });
   }
 
   @override
@@ -232,12 +278,6 @@ class _ScanScreenState extends State<ScanScreen> {
                   );
                 }).toList(),
               ),
-              Column(
-                children: [
-                  Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                  Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-                ],
-              ),
             ],
           ),
           SizedBox(height: 10),
@@ -259,42 +299,55 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: [
-                DataColumn(label: Text('Kodu')),
-                DataColumn(label: Text('Detay')),
-                DataColumn(label: Text('Adet')),
-                DataColumn(label: Text('Adet Fiyatı')),
-                DataColumn(label: Text('Toplam Fiyat')),
-                DataColumn(label: Text('Sil')),
-              ],
-              rows: scannedProducts.map((product) {
-                int index = scannedProducts.indexOf(product);
-                return DataRow(cells: [
-                  DataCell(Text(product['Kodu'])),
-                  DataCell(Text(product['Detay'])),
-                  DataCell(
-                    TextField(
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: [
+                    DataColumn(label: Text('Kodu')),
+                    DataColumn(label: Text('Detay')),
+                    DataColumn(label: Text('Adet')),
+                    DataColumn(label: Text('Adet Fiyatı')),
+                    DataColumn(label: Text('Toplam Fiyat')),
+                    DataColumn(label: Text('Sil')),
+                  ],
+                  rows: scannedProducts.map((product) {
+                    int index = scannedProducts.indexOf(product);
+                    return DataRow(cells: [
+                      DataCell(Text(product['Kodu'])),
+                      DataCell(Text(product['Detay'])),
+                      DataCell(
+                        product['Adet Fiyatı'].contains('Toplam Tutar') ||
+                            product['Adet Fiyatı'].contains('KDV %20') ||
+                            product['Adet Fiyatı'].contains('Genel Toplam')
+                            ? Text('')
+                            : TextField(
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => updateQuantity(index, value),
+                          controller: TextEditingController()..text = product['Adet'],
+                        ),
                       ),
-                      onChanged: (value) => updateQuantity(index, value),
-                      controller: TextEditingController()..text = product['Adet'],
-                    ),
-                  ),
-                  DataCell(Text(product['Adet Fiyatı'])),
-                  DataCell(Text(product['Toplam Fiyat'])),
-                  DataCell(
-                    IconButton(
-                      icon: Icon(Icons.delete, color: Colors.red),
-                      onPressed: () => removeProduct(index),
-                    ),
-                  ),
-                ]);
-              }).toList(),
+                      DataCell(Text(product['Adet Fiyatı'])),
+                      DataCell(Text(product['Toplam Fiyat'])),
+                      DataCell(
+                        product['Adet Fiyatı'].contains('Toplam Tutar') ||
+                            product['Adet Fiyatı'].contains('KDV %20') ||
+                            product['Adet Fiyatı'].contains('Genel Toplam')
+                            ? Text('')
+                            : IconButton(
+                          icon: Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => removeProduct(index),
+                        ),
+                      ),
+                    ]);
+                  }).toList(),
+                ),
+              ),
             ),
           ),
         ],
