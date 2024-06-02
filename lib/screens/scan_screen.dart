@@ -92,10 +92,17 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> fetchProductDetails(String barcode) async {
     var products = await firestoreService.fetchProductsByBarcode(barcode);
     if (products.isNotEmpty) {
-      if (products.length > 1) {
-        showProductSelectionDialog(products);
+      var uniqueProducts = <Map<String, dynamic>>[];
+      for (var product in products) {
+        if (!uniqueProducts.any((p) => p['Kodu'] == product['Kodu'])) {
+          uniqueProducts.add(product);
+        }
+      }
+
+      if (uniqueProducts.length > 1) {
+        showProductSelectionDialog(uniqueProducts);
       } else {
-        addProductToTable(products.first);
+        addProductToTable(uniqueProducts.first);
       }
     }
   }
@@ -224,6 +231,12 @@ class _ScanScreenState extends State<ScanScreen> {
                     child: Text(value),
                   );
                 }).toList(),
+              ),
+              Column(
+                children: [
+                  Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                  Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+                ],
               ),
             ],
           ),
