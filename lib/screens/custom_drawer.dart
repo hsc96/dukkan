@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../utils/colors.dart';
+import 'scan_screen.dart'; // ScanScreen sayfası için import
+import 'ZamGuncelleScreen.dart'; // ZamGuncelleScreen sayfası için import
 
 class CustomDrawer extends StatelessWidget {
   @override
@@ -46,6 +48,26 @@ class CustomDrawer extends StatelessWidget {
             title: Text('Beklenen Ürünler'),
             onTap: () {
               Navigator.pushNamed(context, '/awaited_products');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.qr_code_scanner),
+            title: Text('Ürün Tara'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ScanScreen()),
+              );
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.update),
+            title: Text('Zam Güncelle'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => ZamGuncelleScreen()),
+              );
             },
           ),
         ],
