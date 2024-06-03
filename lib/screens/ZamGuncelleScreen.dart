@@ -18,6 +18,8 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
   List<String> selectedBrands = [];
   bool isDropdownOpen = false;
   List<Map<String, dynamic>> zamListesi = [];
+  bool isAscending = true;
+  String sortColumn = 'tarih';
 
   @override
   void initState() {
@@ -37,6 +39,26 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
     var zamList = await firestoreService.fetchZamListesi();
     setState(() {
       zamListesi = zamList ?? [];
+      sortZamListesi();
+    });
+  }
+
+  void sortZamListesi() {
+    setState(() {
+      zamListesi.sort((a, b) {
+        int compare;
+        if (sortColumn == 'tarih') {
+          compare = DateTime.parse(a['tarih']).compareTo(DateTime.parse(b['tarih']));
+          if (compare == 0) {
+            compare = a['tarih'].compareTo(b['tarih']);
+          }
+        } else if (sortColumn == 'zam orani') {
+          compare = (a['zam orani'] as num).compareTo(b['zam orani']);
+        } else {
+          compare = (a['markalar'] as String).compareTo(b['markalar'] as String);
+        }
+        return isAscending ? compare : -compare;
+      });
     });
   }
 
@@ -111,6 +133,7 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
         'yetkili': 'admin',
         'zam orani': zamOrani
       });
+      sortZamListesi();
       selectedBrands.clear();
       zamOraniController.clear();
     });
@@ -134,6 +157,28 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
     );
   }
 
+  void selectAllKSTSBrands() {
+    setState(() {
+      if (selectedBrands.any((brand) => brand.startsWith('KSTS'))) {
+        selectedBrands.removeWhere((brand) => brand.startsWith('KSTS'));
+      } else {
+        selectedBrands.addAll(brands.where((brand) => brand.startsWith('KSTS')).toList());
+      }
+    });
+  }
+
+  void onSort(String column) {
+    setState(() {
+      if (sortColumn == column) {
+        isAscending = !isAscending;
+      } else {
+        sortColumn = column;
+        isAscending = true;
+      }
+      sortZamListesi();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -143,56 +188,58 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButton<String>(
-                    hint: Text('Marka Seç'),
-                    value: null,
-                    isExpanded: true,
-                    onChanged: (String? newValue) {
-                      setState(() {
-                        if (selectedBrands.contains(newValue)) {
-                          selectedBrands.remove(newValue);
-                        } else {
-                          selectedBrands.add(newValue!);
-                        }
-                      });
-                    },
-                    items: brands.map<DropdownMenuItem<String>>((String value) {
-                      return DropdownMenuItem<String>(
-                        value: value,
-                        child: Row(
-                          children: [
-                            Checkbox(
-                              value: selectedBrands.contains(value),
-                              onChanged: (bool? checked) {
-                                setState(() {
-                                  if (checked == true) {
-                                    selectedBrands.add(value);
-                                  } else {
-                                    selectedBrands.remove(value);
-                                  }
-                                });
-                              },
-                            ),
-                            Text(value),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  isDropdownOpen = !isDropdownOpen;
+                });
+              },
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                IconButton(
-                  icon: Icon(Icons.close),
-                  onPressed: () {
-                    setState(() {
-                      isDropdownOpen = false;
-                    });
-                  },
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Marka Seç'),
+                    Icon(isDropdownOpen ? Icons.arrow_drop_up : Icons.arrow_drop_down),
+                  ],
                 ),
-              ],
+              ),
             ),
+            if (isDropdownOpen)
+              Container(
+                height: 300,
+                child: Column(
+                  children: [
+                    ElevatedButton(
+                      onPressed: selectAllKSTSBrands,
+                      child: Text('KSTS Tüm Ürünler'),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: brands.map((String value) {
+                          return CheckboxListTile(
+                            title: Text(value),
+                            value: selectedBrands.contains(value),
+                            onChanged: (bool? checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  selectedBrands.add(value);
+                                } else {
+                                  selectedBrands.remove(value);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             SizedBox(height: 20),
             TextField(
               controller: zamOraniController,
@@ -210,33 +257,51 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
             SizedBox(height: 20),
             Expanded(
               child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,  // Tabloyu yatay yapar
-                child: DataTable(
-                  columns: [
-                    DataColumn(label: Text('Tarih')),
-                    DataColumn(label: Text('Markalar')),
-                    DataColumn(label: Text('Zam Oranı (%)')),
-                  ],
-                  rows: zamListesi.map((zam) {
-                    return DataRow(cells: [
-                      DataCell(Text(zam['tarih'] ?? '')),
-                      DataCell(
-                        GestureDetector(
-                          onTap: () => _showBrandDetail(zam['markalar'] ?? ''),
-                          child: Text(
-                            zam['markalar'] != null && (zam['markalar'] as String).length > 20
-                                ? (zam['markalar'] as String).substring(0, 20) + '...'
-                                : zam['markalar'] ?? '',
-                            style: TextStyle(
-                              decoration: TextDecoration.underline,
-                              color: Colors.blue,
+                scrollDirection: Axis.horizontal,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: DataTable(
+                    sortAscending: isAscending,
+                    sortColumnIndex: sortColumn == 'tarih'
+                        ? 0
+                        : sortColumn == 'markalar'
+                        ? 1
+                        : 2,
+                    columns: [
+                      DataColumn(
+                        label: Text('Tarih'),
+                        onSort: (columnIndex, _) => onSort('tarih'),
+                      ),
+                      DataColumn(
+                        label: Text('Markalar'),
+                        onSort: (columnIndex, _) => onSort('markalar'),
+                      ),
+                      DataColumn(
+                        label: Text('Zam Oranı (%)'),
+                        onSort: (columnIndex, _) => onSort('zam orani'),
+                      ),
+                    ],
+                    rows: zamListesi.map((zam) {
+                      return DataRow(cells: [
+                        DataCell(Text(zam['tarih'] ?? '')),
+                        DataCell(
+                          GestureDetector(
+                            onTap: () => _showBrandDetail(zam['markalar'] ?? ''),
+                            child: Text(
+                              zam['markalar'] != null && (zam['markalar'] as String).length > 20
+                                  ? (zam['markalar'] as String).substring(0, 20) + '...'
+                                  : zam['markalar'] ?? '',
+                              style: TextStyle(
+                                decoration: TextDecoration.underline,
+                                color: Colors.blue,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      DataCell(Text(zam['zam orani']?.toString() ?? '')),
-                    ]);
-                  }).toList(),
+                        DataCell(Text(zam['zam orani']?.toString() ?? '')),
+                      ]);
+                    }).toList(),
+                  ),
                 ),
               ),
             ),

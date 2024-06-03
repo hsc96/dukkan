@@ -7,6 +7,8 @@ import 'screens/awaited_products_screen.dart';
 import 'screens/faturala_screen.dart';
 import 'screens/yesterday_screen.dart';
 import 'screens/calendar_screen.dart';
+import 'screens/iskonto_screen.dart';  // Yeni sayfa import edildi
+import 'screens/ZamGuncelleScreen.dart'; // Zam Güncelle sayfası import edildi
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +36,8 @@ class MyApp extends StatelessWidget {
         '/faturala': (context) => FaturalaScreen(),
         '/yesterday': (context) => YesterdayScreen(),
         '/calendar': (context) => CalendarScreen(),
+        '/iskonto': (context) => IskontoScreen(),  // Yeni rota eklendi
+        '/zam_guncelle': (context) => ZamGuncelleScreen(), // Zam Güncelle rotası eklendi
       },
     );
   }
