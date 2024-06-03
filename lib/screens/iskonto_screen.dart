@@ -22,12 +22,17 @@ class _IskontoScreenState extends State<IskontoScreen> {
   bool isEditable = true;
   bool isDeleting = false;
   List<String> customLevels = [];
+  int currentIndex = 0;
+  List<Map<String, dynamic>> customers = [];
+  Map<String, String> customerDiscounts = {};
+  TextEditingController searchController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     fetchUniqueBrands();
     fetchIskontoData();
+    fetchCustomers();
   }
 
   Future<void> fetchUniqueBrands() async {
@@ -64,6 +69,20 @@ class _IskontoScreenState extends State<IskontoScreen> {
     });
   }
 
+  Future<void> fetchCustomers() async {
+    var querySnapshot = await FirebaseFirestore.instance.collection('veritabanideneme').get();
+    var docs = querySnapshot.docs;
+
+    setState(() {
+      customers = docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+      for (var customer in customers) {
+        if (customer.containsKey('iskonto')) {
+          customerDiscounts[customer['Açıklama']] = customer['iskonto'];
+        }
+      }
+    });
+  }
+
   Future<void> saveIskonto() async {
     var batch = FirebaseFirestore.instance.batch();
     var iskontoCollection = FirebaseFirestore.instance.collection('iskonto');
@@ -84,6 +103,29 @@ class _IskontoScreenState extends State<IskontoScreen> {
     setState(() {
       isEditable = false;
     });
+  }
+
+  Future<void> saveCustomerDiscounts(String customerId, String description) async {
+    var customerCollection = FirebaseFirestore.instance.collection('veritabanideneme');
+    var selectedDiscount = customerDiscounts[description];
+
+    // Belge mevcut değilse, oluştur
+    var querySnapshot = await customerCollection.where('Açıklama', isEqualTo: description).get();
+    if (querySnapshot.docs.isNotEmpty) {
+      var docRef = querySnapshot.docs.first.reference;
+      await docRef.update({
+        'iskonto': selectedDiscount
+      });
+    } else {
+      await customerCollection.add({
+        'Açıklama': description,
+        'iskonto': selectedDiscount
+      });
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('İskonto kaydedildi')),
+    );
   }
 
   Future<void> deleteLevel(String level) async {
@@ -264,7 +306,7 @@ class _IskontoScreenState extends State<IskontoScreen> {
             ),
             if (isEditable && isCustom && level != null)
               IconButton(
-                icon: Icon(Icons.delete, color: Colors.red),
+                icon: Icon(Icons.close, color: Colors.red),
                 onPressed: () => deleteLevel(level),
               ),
           ],
@@ -287,6 +329,63 @@ class _IskontoScreenState extends State<IskontoScreen> {
     });
   }
 
+  Widget buildCustomerList() {
+    List<Map<String, dynamic>> filteredCustomers = customers.where((customer) {
+      return customer['Açıklama']
+          .toString()
+          .toLowerCase()
+          .contains(searchController.text.toLowerCase());
+    }).toList();
+
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: NeverScrollableScrollPhysics(),
+      itemCount: filteredCustomers.length,
+      itemBuilder: (context, index) {
+        var customer = filteredCustomers[index];
+        var customerId = customer['Kodu'];
+        var description = customer['Açıklama'];
+        var discount = customerDiscounts[description] ?? '';
+        return Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Text(
+                customer['Açıklama'] ?? '',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: DropdownButton<String>(
+                value: discount.isEmpty ? null : discount,
+                hint: Text('Seviye Seçin'),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    customerDiscounts[description] = newValue ?? '';
+                  });
+                },
+                items: ['A Seviye', 'B Seviye', 'C Seviye', ...customLevels].map((String level) {
+                  return DropdownMenuItem<String>(
+                    value: level,
+                    child: Text(level),
+                  );
+                }).toList(),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: ElevatedButton(
+                onPressed: () => saveCustomerDiscounts(customerId, description),
+                child: Text('Kaydet'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -294,95 +393,142 @@ class _IskontoScreenState extends State<IskontoScreen> {
       endDrawer: CustomDrawer(),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              ExpansionPanelList(
-                expansionCallback: (int index, bool isExpanded) {
-                  setState(() {
-                    if (index == 0) isASeviyeOpen = !isASeviyeOpen;
-                    if (index == 1) isBSeviyeOpen = !isBSeviyeOpen;
-                    if (index == 2) isCSeviyeOpen = !isCSeviyeOpen;
-                    if (index >= 3) customIsExpanded[customLevels[index - 3]] =
-                    !customIsExpanded[customLevels[index - 3]]!;
-                  });
-                },
-                children: [
-                  ExpansionPanel(
-                    headerBuilder: (BuildContext context, bool isExpanded) {
-                      return ListTile(
-                        title: Text('A Seviye İskonto'),
-                      );
-                    },
-                    body: buildIskontoList(aSeviyeIskonto, 'A Seviye'),
-                    isExpanded: isASeviyeOpen,
+        child: Column(
+          children: [
+            ToggleButtons(
+              isSelected: [currentIndex == 0, currentIndex == 1],
+              onPressed: (int index) {
+                setState(() {
+                  currentIndex = index;
+                });
+              },
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text('İskonto Düzenle'),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Text('İskonto Eşleştir'),
+                ),
+              ],
+            ),
+            if (currentIndex == 1)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: TextField(
+                  controller: searchController,
+                  onChanged: (value) {
+                    setState(() {});
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Ünvan Ara...',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
                   ),
-                  ExpansionPanel(
-                    headerBuilder: (BuildContext context, bool isExpanded) {
-                      return ListTile(
-                        title: Text('B Seviye İskonto'),
-                      );
-                    },
-                    body: buildIskontoList(bSeviyeIskonto, 'B Seviye'),
-                    isExpanded: isBSeviyeOpen,
-                  ),
-                  ExpansionPanel(
-                    headerBuilder: (BuildContext context, bool isExpanded) {
-                      return ListTile(
-                        title: Text('C Seviye İskonto'),
-                      );
-                    },
-                    body: buildIskontoList(cSeviyeIskonto, 'C Seviye'),
-                    isExpanded: isCSeviyeOpen,
-                  ),
-                  for (var customLevel in customLevels)
-                    ExpansionPanel(
-                      headerBuilder: (BuildContext context, bool isExpanded) {
-                        return ListTile(
-                          title: Row(
-                            children: [
-                              Expanded(child: Text('$customLevel İskonto')),
-                              if (isEditable)
-                                IconButton(
-                                  icon: Icon(Icons.close, color: Colors.red),
-                                  onPressed: () => deleteLevel(customLevel),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                      body: buildIskontoList(customIskonto[customLevel]!, customLevel, isCustom: true, level: customLevel),
-                      isExpanded: customIsExpanded[customLevel] ?? false,
-                    ),
-                ],
+                ),
               ),
-              SizedBox(height: 20),
-              if (isEditable)
-                Column(
+            Expanded(
+              child: currentIndex == 0
+                  ? SingleChildScrollView(
+                child: Column(
                   children: [
-                    ElevatedButton(
-                      onPressed: saveIskonto,
-                      child: Text('Kaydet'),
+                    ExpansionPanelList(
+                      expansionCallback: (int index, bool isExpanded) {
+                        setState(() {
+                          if (index == 0) isASeviyeOpen = !isASeviyeOpen;
+                          if (index == 1) isBSeviyeOpen = !isBSeviyeOpen;
+                          if (index == 2) isCSeviyeOpen = !isCSeviyeOpen;
+                          if (index >= 3) customIsExpanded[customLevels[index - 3]] =
+                          !customIsExpanded[customLevels[index - 3]]!;
+                        });
+                      },
+                      children: [
+                        ExpansionPanel(
+                          headerBuilder: (BuildContext context, bool isExpanded) {
+                            return ListTile(
+                              title: Text('A Seviye İskonto'),
+                            );
+                          },
+                          body: buildIskontoList(aSeviyeIskonto, 'A Seviye'),
+                          isExpanded: isASeviyeOpen,
+                        ),
+                        ExpansionPanel(
+                          headerBuilder: (BuildContext context, bool isExpanded) {
+                            return ListTile(
+                              title: Text('B Seviye İskonto'),
+                            );
+                          },
+                          body: buildIskontoList(bSeviyeIskonto, 'B Seviye'),
+                          isExpanded: isBSeviyeOpen,
+                        ),
+                        ExpansionPanel(
+                          headerBuilder: (BuildContext context, bool isExpanded) {
+                            return ListTile(
+                              title: Text('C Seviye İskonto'),
+                            );
+                          },
+                          body: buildIskontoList(cSeviyeIskonto, 'C Seviye'),
+                          isExpanded: isCSeviyeOpen,
+                        ),
+                        for (var customLevel in customLevels)
+                          ExpansionPanel(
+                            headerBuilder: (BuildContext context, bool isExpanded) {
+                              return ListTile(
+                                title: Row(
+                                  children: [
+                                    Expanded(child: Text('$customLevel İskonto')),
+                                    if (isEditable)
+                                      IconButton(
+                                        icon: Icon(Icons.close, color: Colors.red),
+                                        onPressed: () => deleteLevel(customLevel),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                            body: buildIskontoList(customIskonto[customLevel]!, customLevel, isCustom: true, level: customLevel),
+                            isExpanded: customIsExpanded[customLevel] ?? false,
+                          ),
+                      ],
                     ),
-                    SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: addNewLevel,
-                      child: Text('Seviye Ekle'),
-                    ),
+                    SizedBox(height: 20),
+                    if (isEditable)
+                      Column(
+                        children: [
+                          ElevatedButton(
+                            onPressed: saveIskonto,
+                            child: Text('Kaydet'),
+                          ),
+                          SizedBox(height: 10),
+                          ElevatedButton(
+                            onPressed: addNewLevel,
+                            child: Text('Seviye Ekle'),
+                          ),
+                        ],
+                      ),
+                    if (!isEditable)
+                      ElevatedButton(
+                        onPressed: enableEditing,
+                        child: Text('Düzenle'),
+                      ),
+                    if (isEditable && isDeleting)
+                      ElevatedButton(
+                        onPressed: disableEditing,
+                        child: Text('İptal'),
+                      ),
                   ],
                 ),
-              if (!isEditable)
-                ElevatedButton(
-                  onPressed: enableEditing,
-                  child: Text('Düzenle'),
+              )
+                  : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    buildCustomerList(),
+                  ],
                 ),
-              if (isEditable && isDeleting)
-                ElevatedButton(
-                  onPressed: disableEditing,
-                  child: Text('İptal'),
-                ),
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
       bottomNavigationBar: CustomBottomBar(),
