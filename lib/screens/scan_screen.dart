@@ -8,6 +8,7 @@ import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'dovizservice.dart';
 import 'firestore_service.dart';
+import 'package:intl/intl.dart'; // Tarih formatı için eklenmiştir.
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -22,8 +23,10 @@ class _ScanScreenState extends State<ScanScreen> {
   String barcodeResult = "";
   String dolarKur = "";
   String euroKur = "";
+  String currentDate = DateFormat('d MMMM y', 'tr_TR').format(DateTime.now()); // Tarih formatı ayarlandı.
 
   List<Map<String, dynamic>> scannedProducts = [];
+  List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
   final FirestoreService firestoreService = FirestoreService();
 
   @override
@@ -101,7 +104,7 @@ class _ScanScreenState extends State<ScanScreen> {
       if (uniqueProducts.length > 1) {
         showProductSelectionDialog(uniqueProducts);
       } else {
-        addProductToTable(uniqueProducts.first);
+        await addProductToTable(uniqueProducts.first);
       }
     }
   }
@@ -131,11 +134,13 @@ class _ScanScreenState extends State<ScanScreen> {
 
       productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
       productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (discountedPrice * 1).toStringAsFixed(2);
+      double adet = double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1;
+      productData['Toplam Fiyat'] = (discountedPrice * adet).toStringAsFixed(2);
     } else {
       productData['İskonto'] = '0%';
       productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
+      double adet = double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1;
+      productData['Toplam Fiyat'] = (priceInTl * adet).toStringAsFixed(2);
     }
   }
 
@@ -197,8 +202,26 @@ class _ScanScreenState extends State<ScanScreen> {
         'Toplam Fiyat': productData['Toplam Fiyat']?.toString(),
         'İskonto': productData['İskonto']?.toString() ?? ''
       });
+      originalProducts.add({
+        ...productData,
+        'Original Fiyat': productData['Fiyat']?.toString() ?? '0',
+      });
       updateTotalAndVat();
     });
+  }
+
+  Future<void> updateProductsForCustomer() async {
+    for (var i = 0; i < scannedProducts.length; i++) {
+      var productData = originalProducts[i];
+      productData['Adet'] = scannedProducts[i]['Adet']; // Adet bilgisini koru
+      await applyDiscountToProduct(productData, productData['Marka']);
+      setState(() {
+        scannedProducts[i]['Adet Fiyatı'] = productData['Adet Fiyatı'];
+        scannedProducts[i]['Toplam Fiyat'] = productData['Toplam Fiyat'];
+        scannedProducts[i]['İskonto'] = productData['İskonto'];
+      });
+    }
+    updateTotalAndVat(); // Toplam ve KDV güncellemesi
   }
 
   void updateQuantity(int index, String quantity) {
@@ -229,6 +252,7 @@ class _ScanScreenState extends State<ScanScreen> {
               onPressed: () {
                 setState(() {
                   scannedProducts.removeAt(index);
+                  originalProducts.removeAt(index);
                   updateTotalAndVat();
                 });
                 Navigator.of(context).pop();
@@ -297,47 +321,97 @@ class _ScanScreenState extends State<ScanScreen> {
                 icon: Icon(CupertinoIcons.barcode, size: 24, color: colorTheme5),
                 onPressed: scanBarcode,
               ),
-              DropdownButton<String>(
-                hint: Text('MÜŞTERİ SEÇ'),
-                value: selectedCustomer,
-                icon: Icon(Icons.arrow_downward),
-                iconSize: 24,
-                elevation: 16,
-                style: TextStyle(color: Colors.black),
-                underline: Container(
-                  height: 2,
-                  color: Colors.grey,
-                ),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    selectedCustomer = newValue;
-                  });
-                },
-                items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
+              Row(
+                children: [
+                  DropdownButton<String>(
+                    hint: Text('MÜŞTERİ SEÇ'),
+                    value: selectedCustomer,
+                    icon: Icon(Icons.arrow_downward),
+                    iconSize: 24,
+                    elevation: 16,
+                    style: TextStyle(color: Colors.black),
+                    underline: Container(
+                      height: 2,
+                      color: Colors.grey,
+                    ),
+                    onChanged: (String? newValue) {
+                      if (newValue != selectedCustomer) {
+                        if (scannedProducts.isNotEmpty) {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text('Müşteri Değiştir'),
+                                content: Text('Müşteriyi değiştirmek istediğinizden emin misiniz?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: Text('Hayır'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        selectedCustomer = newValue;
+                                        updateProductsForCustomer();
+                                      });
+                                      Navigator.of(context).pop();
+                                    },
+                                    child: Text('Evet'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        } else {
+                          setState(() {
+                            selectedCustomer = newValue;
+                            updateProductsForCustomer();
+                          });
+                        }
+                      }
+                    },
+                    items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
+                      return DropdownMenuItem<String>(
+                        value: value,
+                        child: Text(value),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
             ],
           ),
           SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: TextField(
-              controller: searchController,
-              onChanged: (query) => filterCustomers(query),
-              decoration: InputDecoration(
-                hintText: 'Müşteri ara...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(
-                    color: Colors.grey,
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: searchController,
+                    onChanged: (query) => filterCustomers(query),
+                    decoration: InputDecoration(
+                      hintText: 'Müşteri ara...',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                          color: Colors.grey,
+                        ),
+                      ),
+                      prefixIcon: Icon(Icons.search),
+                    ),
                   ),
                 ),
-                prefixIcon: Icon(Icons.search),
-              ),
+                IconButton(
+                  icon: Icon(Icons.refresh, color: colorTheme5),
+                  onPressed: () {
+                    updateProductsForCustomer();
+                    updateTotalAndVat();
+                  },
+                ),
+              ],
             ),
           ),
           SizedBox(height: 30),
@@ -404,6 +478,7 @@ class _ScanScreenState extends State<ScanScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
+            Text(currentDate, style: TextStyle(fontSize: 16, color: Colors.black)), // Tarih eklendi
             Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
           ],
         ),

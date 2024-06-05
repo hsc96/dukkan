@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/date_symbol_data_local.dart';  // Intl paketi
 import 'firebase_options.dart';
 import 'screens/custom_header_screen.dart';
 import 'screens/scan_screen.dart';
@@ -15,6 +16,7 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await initializeDateFormatting('tr', null);  // 'tr' locale'i için initialize
   runApp(const MyApp());
 }
 
