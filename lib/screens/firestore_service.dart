@@ -43,7 +43,7 @@ class FirestoreService {
 
     for (var doc in querySnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
-      double currentPrice = double.tryParse(data['Fiyat'].toString()) ?? 0.0;
+      double currentPrice = double.tryParse(data['Fiyat']?.toString() ?? '0') ?? 0.0;
       double newPrice = currentPrice + (currentPrice * zamOrani / 100);
 
       await _db.collection('urunler').doc(doc.id).update({'Fiyat': newPrice.toStringAsFixed(2)});
@@ -56,7 +56,7 @@ class FirestoreService {
 
     for (var doc in querySnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
-      brands.add(data['Marka']);
+      brands.add(data['Marka'] ?? '');
     }
 
     return brands.toList();
@@ -82,5 +82,37 @@ class FirestoreService {
         'zam orani': data['zam orani'] ?? 0,
       };
     }).toList();
+  }
+
+  Future<Map<String, dynamic>> getCustomerDiscount(String customerName) async {
+    var querySnapshot = await _db.collection('veritabanideneme')
+        .where('Açıklama', isEqualTo: customerName)
+        .limit(1)
+        .get();
+    if (querySnapshot.docs.isNotEmpty) {
+      return querySnapshot.docs.first.data();
+    } else {
+      throw Exception('İskonto bilgisi bulunamadı');
+    }
+  }
+
+  Future<Map<String, dynamic>> getDiscountRates(String discountLevel, String marka) async {
+    if (discountLevel == null || marka == null) {
+      throw Exception('Geçersiz iskonto seviyesi veya marka');
+    }
+
+    var querySnapshot = await _db.collection('iskonto')
+        .where(FieldPath.documentId, isEqualTo: marka)
+        .limit(1)
+        .get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      var data = querySnapshot.docs.first.data();
+      return {
+        'rate': data[discountLevel] ?? 0.0
+      };
+    } else {
+      return {'rate': 0.0}; // İskonto oranı bulunamazsa 0.0 döndür
+    }
   }
 }

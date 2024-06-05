@@ -36,8 +36,7 @@ class _ScanScreenState extends State<ScanScreen> {
   void filterCustomers(String query) {
     setState(() {
       filteredCustomers = customers
-          .where((customer) =>
-          customer.toLowerCase().contains(query.toLowerCase()))
+          .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
@@ -107,6 +106,39 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+  Future<void> applyDiscountToProduct(Map<String, dynamic> productData, String brand) async {
+    if (selectedCustomer == null) return;
+
+    var customerDiscount = await firestoreService.getCustomerDiscount(selectedCustomer!);
+    String discountLevel = customerDiscount['iskonto'] ?? '';
+
+    double priceInTl = 0.0;
+    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ?? 0.0;
+    String currency = productData['Doviz']?.toString() ?? '';
+
+    if (currency == 'Euro') {
+      priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+    } else if (currency == 'Dolar') {
+      priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+    } else {
+      priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
+    }
+
+    if (discountLevel.isNotEmpty) {
+      var discountData = await firestoreService.getDiscountRates(discountLevel, brand);
+      double discountRate = discountData['rate'] ?? 0.0;
+      double discountedPrice = priceInTl * (1 - (discountRate / 100));
+
+      productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
+      productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (discountedPrice * 1).toStringAsFixed(2);
+    } else {
+      productData['İskonto'] = '0%';
+      productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
+    }
+  }
+
   void showProductSelectionDialog(List<Map<String, dynamic>> products) {
     showDialog(
       context: context,
@@ -121,8 +153,8 @@ class _ScanScreenState extends State<ScanScreen> {
               itemBuilder: (BuildContext context, int index) {
                 return ListTile(
                   title: Text(products[index]['Detay']),
-                  onTap: () {
-                    addProductToTable(products[index]);
+                  onTap: () async {
+                    await addProductToTable(products[index]);
                     Navigator.of(context).pop();
                   },
                 );
@@ -134,24 +166,36 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-  void addProductToTable(Map<String, dynamic> productData) {
+  Future<void> addProductToTable(Map<String, dynamic> productData) async {
     double priceInTl = 0.0;
-    double price = double.tryParse(productData['Fiyat']) ?? 0.0;
-    String currency = productData['Doviz'] ?? '';
+    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ?? 0.0;
+    String currency = productData['Doviz']?.toString() ?? '';
 
     if (currency == 'Euro') {
       priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
     } else if (currency == 'Dolar') {
       priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+    } else {
+      priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
+    }
+
+    productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
+
+    // Müşteri seçilmişse iskonto uygula
+    if (selectedCustomer != null) {
+      await applyDiscountToProduct(productData, productData['Marka']?.toString() ?? '');
+    } else {
+      productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
     }
 
     setState(() {
       scannedProducts.add({
-        'Kodu': productData['Kodu'] ?? '',
-        'Detay': productData['Detay'] ?? '',
+        'Kodu': productData['Kodu']?.toString() ?? '',
+        'Detay': productData['Detay']?.toString() ?? '',
         'Adet': '1',
-        'Adet Fiyatı': priceInTl.toStringAsFixed(2),
-        'Toplam Fiyat': (priceInTl * 1).toStringAsFixed(2)
+        'Adet Fiyatı': productData['Adet Fiyatı']?.toString(),
+        'Toplam Fiyat': productData['Toplam Fiyat']?.toString(),
+        'İskonto': productData['İskonto']?.toString() ?? ''
       });
       updateTotalAndVat();
     });
@@ -160,7 +204,7 @@ class _ScanScreenState extends State<ScanScreen> {
   void updateQuantity(int index, String quantity) {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
-      double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']) ?? 0.0;
+      double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       scannedProducts[index]['Adet'] = quantity;
       scannedProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
       updateTotalAndVat();
@@ -200,8 +244,8 @@ class _ScanScreenState extends State<ScanScreen> {
   void updateTotalAndVat() {
     double total = 0.0;
     scannedProducts.forEach((product) {
-      if (product['Kodu'] != '' && product['Toplam Fiyat'] != '') {
-        total += double.tryParse(product['Toplam Fiyat']) ?? 0.0;
+      if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
+        total += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
       }
     });
 
@@ -209,13 +253,11 @@ class _ScanScreenState extends State<ScanScreen> {
     double grandTotal = total + vat;
 
     setState(() {
-      // Sadece bir kez "Toplam Tutar", "KDV %20" ve "Genel Toplam" eklemek için önceki eklemeleri kaldır
       scannedProducts.removeWhere((product) =>
-      product['Adet Fiyatı'] == 'Toplam Tutar' ||
-          product['Adet Fiyatı'] == 'KDV %20' ||
-          product['Adet Fiyatı'] == 'Genel Toplam');
+      product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+          product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+          product['Adet Fiyatı']?.toString() == 'Genel Toplam');
 
-      // "Toplam Tutar", "KDV %20" ve "Genel Toplam" ekle
       scannedProducts.add({
         'Kodu': '',
         'Detay': '',
@@ -310,18 +352,19 @@ class _ScanScreenState extends State<ScanScreen> {
                     DataColumn(label: Text('Detay')),
                     DataColumn(label: Text('Adet')),
                     DataColumn(label: Text('Adet Fiyatı')),
+                    DataColumn(label: Text('İskonto')),
                     DataColumn(label: Text('Toplam Fiyat')),
                     DataColumn(label: Text('Sil')),
                   ],
                   rows: scannedProducts.map((product) {
                     int index = scannedProducts.indexOf(product);
                     return DataRow(cells: [
-                      DataCell(Text(product['Kodu'])),
-                      DataCell(Text(product['Detay'])),
+                      DataCell(Text(product['Kodu']?.toString() ?? '')),
+                      DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
-                        product['Adet Fiyatı'].contains('Toplam Tutar') ||
-                            product['Adet Fiyatı'].contains('KDV %20') ||
-                            product['Adet Fiyatı'].contains('Genel Toplam')
+                        (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
+                            (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
+                            (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false)
                             ? Text('')
                             : TextField(
                           keyboardType: TextInputType.number,
@@ -329,15 +372,16 @@ class _ScanScreenState extends State<ScanScreen> {
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (value) => updateQuantity(index, value),
-                          controller: TextEditingController()..text = product['Adet'],
+                          controller: TextEditingController()..text = product['Adet']?.toString() ?? '',
                         ),
                       ),
-                      DataCell(Text(product['Adet Fiyatı'])),
-                      DataCell(Text(product['Toplam Fiyat'])),
+                      DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                      DataCell(Text(product['İskonto']?.toString() ?? '')),
+                      DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                       DataCell(
-                        product['Adet Fiyatı'].contains('Toplam Tutar') ||
-                            product['Adet Fiyatı'].contains('KDV %20') ||
-                            product['Adet Fiyatı'].contains('Genel Toplam')
+                        (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
+                            (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
+                            (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false)
                             ? Text('')
                             : IconButton(
                           icon: Icon(Icons.delete, color: Colors.red),
