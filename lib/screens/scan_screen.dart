@@ -9,6 +9,11 @@ import 'custom_drawer.dart';
 import 'dovizservice.dart';
 import 'firestore_service.dart';
 import 'package:intl/intl.dart'; // Tarih formatı için eklenmiştir.
+import 'package:path_provider/path_provider.dart'; // Dosya yolları için
+import 'dart:io'; // Dosya işlemleri için
+import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
+import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
+import 'pdf_template.dart'; // PDF şablonu için
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -134,13 +139,11 @@ class _ScanScreenState extends State<ScanScreen> {
 
       productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
       productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      double adet = double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1;
-      productData['Toplam Fiyat'] = (discountedPrice * adet).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (discountedPrice * 1).toStringAsFixed(2);
     } else {
       productData['İskonto'] = '0%';
       productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
-      double adet = double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1;
-      productData['Toplam Fiyat'] = (priceInTl * adet).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
     }
   }
 
@@ -213,7 +216,6 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> updateProductsForCustomer() async {
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = originalProducts[i];
-      productData['Adet'] = scannedProducts[i]['Adet']; // Adet bilgisini koru
       await applyDiscountToProduct(productData, productData['Marka']);
       setState(() {
         scannedProducts[i]['Adet Fiyatı'] = productData['Adet Fiyatı'];
@@ -306,6 +308,19 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  Future<void> saveAsPDF() async {
+    final pdf = PDFTemplate.generateQuote(selectedCustomer!, scannedProducts);
+
+    try {
+      final output = await getTemporaryDirectory();
+      final file = File("${output.path}/${selectedCustomer}_fiyat_teklifi.pdf");
+      await file.writeAsBytes(await pdf.save());
+      await OpenFile.open(file.path);
+    } catch (e) {
+      print('PDF kaydedilirken hata oluştu: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -367,7 +382,6 @@ class _ScanScreenState extends State<ScanScreen> {
                         } else {
                           setState(() {
                             selectedCustomer = newValue;
-                            updateProductsForCustomer();
                           });
                         }
                       }
@@ -466,6 +480,32 @@ class _ScanScreenState extends State<ScanScreen> {
                   }).toList(),
                 ),
               ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    saveAsPDF();
+                  },
+                  child: Text('Teklif Ver'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    // Satış yap fonksiyonu burada
+                  },
+                  child: Text('Satış Yap'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    // Hesaba işle fonksiyonu burada
+                  },
+                  child: Text('Hesaba İşle'),
+                ),
+              ],
             ),
           ),
         ],
