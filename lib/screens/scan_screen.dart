@@ -34,6 +34,10 @@ class _ScanScreenState extends State<ScanScreen> {
   List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
   final FirestoreService firestoreService = FirestoreService();
 
+  double toplamTutar = 0.0;
+  double kdv = 0.0;
+  double genelToplam = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -268,15 +272,15 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   void updateTotalAndVat() {
-    double total = 0.0;
+    toplamTutar = 0.0;
     scannedProducts.forEach((product) {
       if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
-        total += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
+        toplamTutar += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
       }
     });
 
-    double vat = total * 0.20;
-    double grandTotal = total + vat;
+    kdv = toplamTutar * 0.20;
+    genelToplam = toplamTutar + kdv;
 
     setState(() {
       scannedProducts.removeWhere((product) =>
@@ -289,27 +293,39 @@ class _ScanScreenState extends State<ScanScreen> {
         'Detay': '',
         'Adet': '',
         'Adet Fiyatı': 'Toplam Tutar',
-        'Toplam Fiyat': total.toStringAsFixed(2),
+        'Toplam Fiyat': toplamTutar.toStringAsFixed(2),
       });
       scannedProducts.add({
         'Kodu': '',
         'Detay': '',
         'Adet': '',
         'Adet Fiyatı': 'KDV %20',
-        'Toplam Fiyat': vat.toStringAsFixed(2),
+        'Toplam Fiyat': kdv.toStringAsFixed(2),
       });
       scannedProducts.add({
         'Kodu': '',
         'Detay': '',
         'Adet': '',
         'Adet Fiyatı': 'Genel Toplam',
-        'Toplam Fiyat': grandTotal.toStringAsFixed(2),
+        'Toplam Fiyat': genelToplam.toStringAsFixed(2),
       });
     });
   }
 
   Future<void> saveAsPDF() async {
-    final pdf = PDFTemplate.generateQuote(selectedCustomer!, scannedProducts);
+    // Kullanıcıdan teslim tarihi ve teklif süresi bilgilerini alın
+    String teslimTarihi = await _selectDate(context);
+    String teklifSuresi = await _selectOfferDuration(context);
+
+    final pdf = await PDFTemplate.generateQuote(
+      selectedCustomer!,
+      scannedProducts,
+      toplamTutar,
+      kdv,
+      genelToplam,
+      teslimTarihi,
+      teklifSuresi,
+    );
 
     try {
       final output = await getTemporaryDirectory();
@@ -319,6 +335,60 @@ class _ScanScreenState extends State<ScanScreen> {
     } catch (e) {
       print('PDF kaydedilirken hata oluştu: $e');
     }
+  }
+
+  Future<String> _selectDate(BuildContext context) async {
+    DateTime selectedDate = DateTime.now();
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null && picked != selectedDate) {
+      int businessDays = _calculateBusinessDays(selectedDate, picked);
+      return '$businessDays iş günü';
+    }
+    return '0 iş günü';
+  }
+
+  Future<String> _selectOfferDuration(BuildContext context) async {
+    String offerDuration = '';
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Teklif Süresi (gün)'),
+          content: TextField(
+            keyboardType: TextInputType.number,
+            onChanged: (value) {
+              offerDuration = value;
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+    return offerDuration;
+  }
+
+  int _calculateBusinessDays(DateTime start, DateTime end) {
+    int count = 0;
+    DateTime current = start;
+    while (current.isBefore(end)) {
+      current = current.add(Duration(days: 1));
+      if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+        count++;
+      }
+    }
+    return count;
   }
 
   @override

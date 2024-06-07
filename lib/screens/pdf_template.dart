@@ -1,121 +1,77 @@
+import 'package:flutter/services.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:pdf/pdf.dart';
+import 'package:intl/intl.dart';
 
 class PDFTemplate {
-  static pw.Document generateQuote(String customerName, List<Map<String, dynamic>> products) {
+  static Future<pw.Document> generateQuote(String customerName, List<Map<String, dynamic>> products, double toplamTutar, double kdv, double genelToplam, String teslimTarihi, String teklifSuresi) async {
     final pdf = pw.Document();
-    final tableHeaders = ['Description', 'Date', 'Quantity', 'Unit Price', 'VAT', 'Total'];
+    final font = pw.Font.ttf(await rootBundle.load("lib/assets/fonts/Roboto-Regular.ttf"));
 
-    // PDF'e eklemek için tablodaki verileri hazırlayın
-    final tableData = products.map((product) {
-      return [
-        product['Detay']?.toString() ?? '',
-        DateTime.now().toString().split(' ')[0], // Date formatını burada düzenleyebilirsiniz
-        product['Adet']?.toString() ?? '',
-        product['Adet Fiyatı']?.toString() ?? '',
-        '19.0%', // Sabit KDV oranı, gerekirse hesaplama ekleyin
-        product['Toplam Fiyat']?.toString() ?? '',
-      ];
-    }).toList();
-
-    double netTotal = tableData.fold(0, (sum, item) => sum + double.tryParse(item[5])!);
-    double vatAmount = netTotal * 0.19; // %19 KDV
-    double totalAmountDue = netTotal + vatAmount;
-
-    // PDF'e tablo ekleme
     pdf.addPage(
       pw.Page(
+        pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
           return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text('Sarah Field', style: pw.TextStyle(fontSize: 12)),
-                      pw.Text('Sarah Street 9, Beijing, China', style: pw.TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                  pw.BarcodeWidget(
-                    barcode: pw.Barcode.qrCode(),
-                    data: 'https://paypal.me/sarahfieldzz', // QR kod verisi
-                    width: 60,
-                    height: 60,
-                  ),
-                ],
+              // Üst kısım
+              pw.Container(
+                color: PdfColors.deepOrange,
+                height: 20,
               ),
-              pw.SizedBox(height: 20),
+              pw.SizedBox(height: 10),
+              // Başlık ve müşteri bilgileri
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Apple Inc.', style: pw.TextStyle(fontSize: 12)),
-                      pw.Text('Apple Street, Cupertino, CA 95014', style: pw.TextStyle(fontSize: 12)),
+                      pw.Text(
+                        'Coşkun Hidrolik Pnömatik Sız. Elemanları',
+                        style: pw.TextStyle(fontSize: 18, font: font),
+                      ),
+                      pw.Text('Çorlu / Türkiye', style: pw.TextStyle(font: font)),
+                      pw.Text('İletişim Bilgileri', style: pw.TextStyle(font: font)),
                     ],
                   ),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.Text('Invoice Number: 2021-9999', style: pw.TextStyle(fontSize: 12)),
-                      pw.Text('Invoice Date: 3/25/2021', style: pw.TextStyle(fontSize: 12)),
-                      pw.Text('Payment Terms: 7 days', style: pw.TextStyle(fontSize: 12)),
-                      pw.Text('Due Date: 4/1/2021', style: pw.TextStyle(fontSize: 12)),
-                    ],
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-              pw.Text('INVOICE', style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 10),
-              pw.Text('My description...', style: pw.TextStyle(fontSize: 12)),
-              pw.SizedBox(height: 10),
-              pw.Table.fromTextArray(
-                headers: tableHeaders,
-                data: tableData,
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                cellAlignment: pw.Alignment.centerLeft,
-              ),
-              pw.Divider(),
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.end,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Net total', style: pw.TextStyle(fontSize: 12)),
-                          pw.Text(' \$${netTotal.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12)),
-                        ],
-                      ),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Vat 19.0%', style: pw.TextStyle(fontSize: 12)),
-                          pw.Text(' \$${vatAmount.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12)),
-                        ],
-                      ),
+                      pw.Text('FİYAT TEKLİFİ', style: pw.TextStyle(fontSize: 18, font: font)),
                       pw.SizedBox(height: 10),
-                      pw.Row(
-                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                        children: [
-                          pw.Text('Total amount due', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                          pw.Text(' \$${totalAmountDue.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
-                        ],
-                      ),
+                      pw.Text('TARİH: ${DateFormat('dd.MM.yyyy').format(DateTime.now())}', style: pw.TextStyle(font: font)),
+                      pw.Text('TESLİM TARİHİ: $teslimTarihi', style: pw.TextStyle(font: font)),
+                      pw.Text('TEKLİF SÜRESİ: $teklifSuresi gün', style: pw.TextStyle(font: font)),
                     ],
                   ),
                 ],
               ),
-              pw.Divider(),
               pw.SizedBox(height: 20),
-              pw.Text('Address  Sarah Street 9, Beijing, China', style: pw.TextStyle(fontSize: 12)),
-              pw.Text('Paypal  https://paypal.me/sarahfieldzz', style: pw.TextStyle(fontSize: 12)),
+              // Ürün tablosu
+              pw.Table.fromTextArray(
+                headers: ['Açıklama', 'Birim', 'Adet Fiyat', 'Toplam Fiyat'],
+                data: products.map((product) {
+                  return [
+                    product['Detay']?.toString() ?? '',
+                    product['Adet']?.toString() ?? '',
+                    product['Adet Fiyatı']?.toString() ?? '',
+                    product['Toplam Fiyat']?.toString() ?? '',
+                  ];
+                }).toList(),
+                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, font: font),
+                cellStyle: pw.TextStyle(font: font),
+                cellHeight: 25,
+              ),
+              pw.SizedBox(height: 20),
+              // Alt kısım
+
+              pw.SizedBox(height: 20),
+              // Alt kısımda tekrar turuncu şerit
+              pw.Container(
+                color: PdfColors.deepOrange,
+                height: 20,
+              ),
             ],
           );
         },

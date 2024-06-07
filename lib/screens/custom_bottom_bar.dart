@@ -41,7 +41,7 @@ class CustomBottomBar extends StatelessWidget {
           ),
           ElevatedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/awaited_products');
+              Navigator.pushNamed(context, '/customers');
             },
             child: const Text('MÜŞTERİLER'),
             style: ElevatedButton.styleFrom(
