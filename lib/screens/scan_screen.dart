@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io'; // Dosya işlemleri için
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
@@ -11,7 +12,6 @@ import 'dovizservice.dart';
 import 'firestore_service.dart';
 import 'package:intl/intl.dart'; // Tarih formatı için eklenmiştir.
 import 'package:path_provider/path_provider.dart'; // Dosya yolları için
-import 'dart:io'; // Dosya işlemleri için
 import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
 import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
 import 'pdf_template.dart'; // PDF şablonu için
@@ -286,9 +286,9 @@ class _ScanScreenState extends State<ScanScreen> {
 
     setState(() {
       scannedProducts.removeWhere((product) =>
-      product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
-          product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-          product['Adet Fiyatı']?.toString() == 'Genel Toplam');
+      (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
+          (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
+          (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false));
 
       scannedProducts.add({
         'Kodu': '',
@@ -553,9 +553,9 @@ class _ScanScreenState extends State<ScanScreen> {
                       DataCell(Text(product['Kodu']?.toString() ?? '')),
                       DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
-                        (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
-                            (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
-                            (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false)
+                        product['Adet Fiyatı']?.toString().contains('Toplam Tutar') == true ||
+                            product['Adet Fiyatı']?.toString().contains('KDV %20') == true ||
+                            product['Adet Fiyatı']?.toString().contains('Genel Toplam') == true
                             ? Text('')
                             : TextField(
                           keyboardType: TextInputType.number,
@@ -570,9 +570,9 @@ class _ScanScreenState extends State<ScanScreen> {
                       DataCell(Text(product['İskonto']?.toString() ?? '')),
                       DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                       DataCell(
-                        (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
-                            (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
-                            (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false)
+                        product['Adet Fiyatı']?.toString().contains('Toplam Tutar') == true ||
+                            product['Adet Fiyatı']?.toString().contains('KDV %20') == true ||
+                            product['Adet Fiyatı']?.toString().contains('Genel Toplam') == true
                             ? Text('')
                             : IconButton(
                           icon: Icon(Icons.delete, color: Colors.red),

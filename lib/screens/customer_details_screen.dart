@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
+import '../utils/colors.dart';
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -14,7 +15,9 @@ class CustomerDetailsScreen extends StatefulWidget {
 }
 
 class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
-  List<Map<String, dynamic>> products = [];
+  List<Map<String, dynamic>> customerProducts = [];
+  bool isEditing = false;
+  int editingIndex = -1;
 
   @override
   void initState() {
@@ -24,63 +27,93 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
   Future<void> fetchCustomerProducts() async {
     var querySnapshot = await FirebaseFirestore.instance
-        .collection('customerProducts')
+        .collection('customerDetails')
         .where('customerName', isEqualTo: widget.customerName)
         .get();
 
-    var docs = querySnapshot.docs;
-    var productsList = docs.map((doc) {
-      var data = doc.data() as Map<String, dynamic>;
-      return {
-        'Kodu': data['Kodu'] ?? '',
-        'Detay': data['Detay'] ?? '',
-        'Adet': data['Adet'] ?? '',
-        'Adet Fiyatı': data['Adet Fiyatı'] ?? '',
-        'Toplam Fiyat': data['Toplam Fiyat'] ?? '',
-        'İskonto': data['İskonto'] ?? ''
-      };
-    }).toList();
-
-    setState(() {
-      products = productsList;
-    });
-  }
-
-  void addProduct(Map<String, dynamic> product) {
-    setState(() {
-      products.add(product);
-    });
-    saveProductToFirestore(product);
-  }
-
-  Future<void> saveProductToFirestore(Map<String, dynamic> product) async {
-    await FirebaseFirestore.instance.collection('customerProducts').add({
-      'customerName': widget.customerName,
-      ...product,
-    });
+    if (querySnapshot.docs.isNotEmpty) {
+      var data = querySnapshot.docs.first.data();
+      setState(() {
+        customerProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);
+      });
+    }
   }
 
   void updateQuantity(int index, String quantity) {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
-      double price = double.tryParse(products[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
-      products[index]['Adet'] = quantity;
-      products[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
+      double price = double.tryParse(customerProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      customerProducts[index]['Adet'] = quantity;
+      customerProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
+      updateTotalAndVat();
     });
-    saveProductToFirestore(products[index]);
+  }
+
+  void updateDiscount(int index, String discount) {
+    setState(() {
+      double discountRate = double.tryParse(discount) ?? 0.0;
+      double originalPrice = double.tryParse(customerProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double discountedPrice = originalPrice * (1 - (discountRate / 100));
+      customerProducts[index]['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
+      customerProducts[index]['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
+      customerProducts[index]['Toplam Fiyat'] = (discountedPrice * (double.tryParse(customerProducts[index]['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
+      updateTotalAndVat();
+    });
+  }
+
+  void updateTotalAndVat() {
+    double toplamTutar = 0.0;
+    customerProducts.forEach((product) {
+      if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
+        toplamTutar += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
+      }
+    });
+
+    double kdv = toplamTutar * 0.20;
+    double genelToplam = toplamTutar + kdv;
+
+    setState(() {
+      // Toplam Tutar, KDV %20 ve Genel Toplam satırları tablonun sonuna ekleniyor.
+      customerProducts.removeWhere((product) =>
+      product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+          product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+          product['Adet Fiyatı']?.toString() == 'Genel Toplam');
+
+      customerProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Toplam Tutar',
+        'Toplam Fiyat': toplamTutar.toStringAsFixed(2),
+      });
+      customerProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'KDV %20',
+        'Toplam Fiyat': kdv.toStringAsFixed(2),
+      });
+      customerProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Genel Toplam',
+        'Toplam Fiyat': genelToplam.toStringAsFixed(2),
+      });
+    });
   }
 
   void removeProduct(int index) {
     setState(() {
-      products.removeAt(index);
+      customerProducts.removeAt(index);
+      updateTotalAndVat();
     });
-    // Firestore'dan da ürünü silmek için kod eklenebilir
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(title: '${widget.customerName} - Detaylar'),
+      appBar: CustomAppBar(title: 'Müşteri Detayları - ${widget.customerName}'),
       drawer: CustomDrawer(),
       body: Column(
         children: [
@@ -98,30 +131,71 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     DataColumn(label: Text('Adet Fiyatı')),
                     DataColumn(label: Text('İskonto')),
                     DataColumn(label: Text('Toplam Fiyat')),
-                    DataColumn(label: Text('Sil')),
+                    DataColumn(label: Text('Düzenle')),
                   ],
-                  rows: products.map((product) {
-                    int index = products.indexOf(product);
+                  rows: customerProducts.map((product) {
+                    int index = customerProducts.indexOf(product);
                     return DataRow(cells: [
                       DataCell(Text(product['Kodu']?.toString() ?? '')),
                       DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
-                        TextField(
+                        isEditing && editingIndex == index
+                            ? TextField(
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (value) => updateQuantity(index, value),
                           controller: TextEditingController()..text = product['Adet']?.toString() ?? '',
-                        ),
+                        )
+                            : Text(product['Adet']?.toString() ?? ''),
                       ),
                       DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
-                      DataCell(Text(product['İskonto']?.toString() ?? '')),
+                      DataCell(
+                        isEditing && editingIndex == index
+                            ? TextField(
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (value) => updateDiscount(index, value),
+                          controller: TextEditingController()..text = product['İskonto']?.toString() ?? '',
+                        )
+                            : Text(product['İskonto']?.toString() ?? ''),
+                      ),
                       DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                       DataCell(
-                        IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => removeProduct(index),
+                        isEditing && editingIndex == index
+                            ? Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.check, color: Colors.green),
+                              onPressed: () {
+                                setState(() {
+                                  isEditing = false;
+                                  editingIndex = -1;
+                                });
+                              },
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: Colors.red),
+                              onPressed: () {
+                                setState(() {
+                                  isEditing = false;
+                                  editingIndex = -1;
+                                });
+                              },
+                            ),
+                          ],
+                        )
+                            : IconButton(
+                          icon: Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () {
+                            setState(() {
+                              isEditing = true;
+                              editingIndex = index;
+                            });
+                          },
                         ),
                       ),
                     ]);
