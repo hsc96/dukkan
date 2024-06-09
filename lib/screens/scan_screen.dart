@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
@@ -14,6 +15,7 @@ import 'dart:io'; // Dosya işlemleri için
 import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
 import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
 import 'pdf_template.dart'; // PDF şablonu için
+import 'customer_details_screen.dart'; // Müşteri detayları ekranını import et
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -312,6 +314,37 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  Future<void> saveToCustomerDetails() async {
+    if (selectedCustomer == null) return;
+
+    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      var docRef = querySnapshot.docs.first.reference;
+      await docRef.update({
+        'products': FieldValue.arrayUnion(scannedProducts),
+      });
+    } else {
+      await customerCollection.add({
+        'customerName': selectedCustomer,
+        'products': scannedProducts,
+      });
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
+    );
+
+    // Müşteri detayları ekranına yönlendir
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
+      ),
+    );
+  }
+
   Future<void> saveAsPDF() async {
     // Kullanıcıdan teslim tarihi ve teklif süresi bilgilerini alın
     String teslimTarihi = await _selectDate(context);
@@ -564,15 +597,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   child: Text('Teklif Ver'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    // Satış yap fonksiyonu burada
-                  },
-                  child: Text('Satış Yap'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    // Hesaba işle fonksiyonu burada
-                  },
+                  onPressed: saveToCustomerDetails, // Hesaba işle fonksiyonunu burada tanımladık
                   child: Text('Hesaba İşle'),
                 ),
               ],

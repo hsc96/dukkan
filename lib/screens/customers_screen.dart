@@ -8,7 +8,7 @@ import '../utils/colors.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
-import '../providers/loading_provider.dart'; // LoadingProvider import edildi
+import '../providers/loading_provider.dart';
 import 'customer_details_screen.dart'; // CustomerDetailsScreen import edildi
 
 class CustomersScreen extends StatefulWidget {
@@ -230,6 +230,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
+  void navigateToCustomerDetails(String customerName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CustomerDetailsScreen(customerName: customerName),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -303,14 +312,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       DataCell(Text(customer['Fatura Kesilecek Tutar'].toString())),
                       DataCell(
                         Text(customer['Açıklama']),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CustomerDetailsScreen(customer: customer),
-                            ),
-                          );
-                        },
+                        onTap: () => navigateToCustomerDetails(customer['Açıklama']),
                       ),
                     ]);
                   }).toList(),
