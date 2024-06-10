@@ -23,6 +23,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   TextEditingController quantityController = TextEditingController();
   TextEditingController priceController = TextEditingController();
   TextEditingController explanationController = TextEditingController();
+  bool showRadioButtons = false;
+  Set<int> selectedIndexes = {};
 
   @override
   void initState() {
@@ -209,6 +211,24 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       body: Column(
         children: [
           SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                IconButton(
+                  icon: Icon(showRadioButtons ? Icons.remove : Icons.add, color: colorTheme5),
+                  onPressed: () {
+                    setState(() {
+                      showRadioButtons = !showRadioButtons;
+                      selectedIndexes.clear();
+                    });
+                  },
+                ),
+                Text('Ürünleri Seç'),
+              ],
+            ),
+          ),
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.vertical,
@@ -216,6 +236,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 scrollDirection: Axis.horizontal,
                 child: DataTable(
                   columns: [
+                    DataColumn(label: Text('')),
                     DataColumn(label: Text('Kodu')),
                     DataColumn(label: Text('Detay')),
                     DataColumn(label: Text('Adet')),
@@ -231,6 +252,22 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
                     return DataRow(cells: [
+                      DataCell(
+                        showRadioButtons && !isTotalRow
+                            ? Checkbox(
+                          value: selectedIndexes.contains(index),
+                          onChanged: (bool? value) {
+                            setState(() {
+                              if (value == true) {
+                                selectedIndexes.add(index);
+                              } else {
+                                selectedIndexes.remove(index);
+                              }
+                            });
+                          },
+                        )
+                            : Container(),
+                      ),
                       DataCell(Text(product['Kodu']?.toString() ?? '')),
                       DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
@@ -243,8 +280,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (value) {
-                            customerProducts[index]['Adet'] = value;
-                            updateQuantity(index, value);
+                            quantityController.text = value;
                           },
                           controller: quantityController..text = product['Adet']?.toString() ?? '',
                           onSubmitted: (value) {
@@ -291,8 +327,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             border: OutlineInputBorder(),
                           ),
                           onChanged: (value) {
-                            customerProducts[index]['Adet Fiyatı'] = value;
-                            updatePrice(index, value);
+                            priceController.text = value;
                           },
                           controller: priceController..text = product['Adet Fiyatı']?.toString() ?? '',
                           onSubmitted: (value) {
@@ -398,7 +433,28 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         ),
                       ),
                     ]);
-                  }).toList(),
+                  }).toList()
+                    ..add(
+                      DataRow(cells: [
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(Container()),
+                        DataCell(
+                          showRadioButtons
+                              ? ElevatedButton(
+                            onPressed: () {
+                              // Kit oluşturma işlemi burada yapılacak
+                            },
+                            child: Text('Kit Oluştur'),
+                          )
+                              : Container(),
+                        ),
+                      ]),
+                    ),
                 ),
               ),
             ),
