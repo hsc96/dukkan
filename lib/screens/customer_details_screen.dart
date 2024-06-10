@@ -4,6 +4,7 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import '../utils/colors.dart';
+import 'package:intl/intl.dart'; // Tarih formatı için eklendi
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -18,6 +19,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   List<Map<String, dynamic>> customerProducts = [];
   bool isEditing = false;
   int editingIndex = -1;
+  Map<String, dynamic>? originalProductData;
+  TextEditingController quantityController = TextEditingController();
+  TextEditingController priceController = TextEditingController();
+  TextEditingController explanationController = TextEditingController();
 
   @override
   void initState() {
@@ -36,6 +41,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       setState(() {
         customerProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);
       });
+      updateTotalAndVat();
     }
   }
 
@@ -45,20 +51,61 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       double price = double.tryParse(customerProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       customerProducts[index]['Adet'] = quantity;
       customerProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
-      updateTotalAndVat();
     });
   }
 
-  void updateDiscount(int index, String discount) {
+  void updatePrice(int index, String price) {
     setState(() {
-      double discountRate = double.tryParse(discount) ?? 0.0;
-      double originalPrice = double.tryParse(customerProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
-      double discountedPrice = originalPrice * (1 - (discountRate / 100));
-      customerProducts[index]['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
-      customerProducts[index]['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      customerProducts[index]['Toplam Fiyat'] = (discountedPrice * (double.tryParse(customerProducts[index]['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
-      updateTotalAndVat();
+      double adet = double.tryParse(customerProducts[index]['Adet']?.toString() ?? '1') ?? 1;
+      double priceValue = double.tryParse(price) ?? 0.0;
+      customerProducts[index]['Adet Fiyatı'] = price;
+      customerProducts[index]['Toplam Fiyat'] = (adet * priceValue).toStringAsFixed(2);
     });
+  }
+
+  void showExplanationDialog(int index, String type) {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Dialog ekranı bilgi girilmeden kapanmasın
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('$type Değişikliği Açıklaması'),
+          content: TextField(
+            controller: explanationController,
+            decoration: InputDecoration(hintText: '$type değişikliği nedeni'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (explanationController.text.isNotEmpty) {
+                  setState(() {
+                    if (type == 'Adet') {
+                      customerProducts[index]['Adet Açıklaması'] = explanationController.text;
+                      customerProducts[index]['Değiştiren'] = 'admin';
+                      customerProducts[index]['Eski Adet'] = originalProductData?['Adet']?.toString();
+                      customerProducts[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
+                    } else if (type == 'Fiyat') {
+                      customerProducts[index]['Fiyat Açıklaması'] = explanationController.text;
+                      customerProducts[index]['Değiştiren'] = 'admin';
+                      customerProducts[index]['Eski Fiyat'] = originalProductData?['Adet Fiyatı']?.toString();
+                      customerProducts[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
+                    }
+                    saveEditsToDatabase(index);
+                    updateTotalAndVat();
+                    isEditing = false;
+                    editingIndex = -1;
+                    originalProductData = null;
+                    explanationController.clear(); // Dialog kapandıktan sonra açıklama alanını temizle
+                  });
+                  Navigator.of(context).pop();
+                }
+              },
+              child: Text('Kaydet'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void updateTotalAndVat() {
@@ -73,7 +120,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     double genelToplam = toplamTutar + kdv;
 
     setState(() {
-      // Toplam Tutar, KDV %20 ve Genel Toplam satırları tablonun sonuna ekleniyor.
       customerProducts.removeWhere((product) =>
       product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
           product['Adet Fiyatı']?.toString() == 'KDV %20' ||
@@ -103,11 +149,56 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     });
   }
 
-  void removeProduct(int index) {
-    setState(() {
-      customerProducts.removeAt(index);
-      updateTotalAndVat();
-    });
+  Future<void> saveEditsToDatabase(int index) async {
+    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var querySnapshot = await customerCollection.where('customerName', isEqualTo: widget.customerName).get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      var docRef = querySnapshot.docs.first.reference;
+      await docRef.update({
+        'products': customerProducts,
+      });
+    }
+  }
+
+  void removeProduct(int index) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürünü Kaldır'),
+          content: Text('Bu ürünü kaldırmak istediğinizden emin misiniz?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Hayır'),
+            ),
+            TextButton(
+              onPressed: () async {
+                var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+                var querySnapshot = await customerCollection.where('customerName', isEqualTo: widget.customerName).get();
+
+                if (querySnapshot.docs.isNotEmpty) {
+                  var docRef = querySnapshot.docs.first.reference;
+                  customerProducts.removeAt(index);
+                  await docRef.update({
+                    'products': customerProducts,
+                  });
+
+                  setState(() {
+                    updateTotalAndVat();
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+              child: Text('Evet'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -135,67 +226,175 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   ],
                   rows: customerProducts.map((product) {
                     int index = customerProducts.indexOf(product);
+                    bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+                        product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+                        product['Adet Fiyatı']?.toString() == 'Genel Toplam';
+
                     return DataRow(cells: [
                       DataCell(Text(product['Kodu']?.toString() ?? '')),
                       DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
-                        isEditing && editingIndex == index
+                        isTotalRow
+                            ? Text('')
+                            : isEditing && editingIndex == index
                             ? TextField(
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(),
                           ),
-                          onChanged: (value) => updateQuantity(index, value),
-                          controller: TextEditingController()..text = product['Adet']?.toString() ?? '',
+                          onChanged: (value) {
+                            customerProducts[index]['Adet'] = value;
+                            updateQuantity(index, value);
+                          },
+                          controller: quantityController..text = product['Adet']?.toString() ?? '',
+                          onSubmitted: (value) {
+                            showExplanationDialog(index, 'Adet');
+                          },
                         )
-                            : Text(product['Adet']?.toString() ?? ''),
+                            : Row(
+                          children: [
+                            Text(product['Adet']?.toString() ?? ''),
+                            if (product['Adet Açıklaması'] != null)
+                              IconButton(
+                                icon: Icon(Icons.info, color: Colors.blue),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return AlertDialog(
+                                        title: Text('Adet Değişikliği Bilgisi'),
+                                        content: Text(
+                                            'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: Text('Tamam'),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                      DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
                       DataCell(
-                        isEditing && editingIndex == index
+                        isTotalRow
+                            ? Text(product['Adet Fiyatı']?.toString() ?? '')
+                            : isEditing && editingIndex == index
                             ? TextField(
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(),
                           ),
-                          onChanged: (value) => updateDiscount(index, value),
-                          controller: TextEditingController()..text = product['İskonto']?.toString() ?? '',
+                          onChanged: (value) {
+                            customerProducts[index]['Adet Fiyatı'] = value;
+                            updatePrice(index, value);
+                          },
+                          controller: priceController..text = product['Adet Fiyatı']?.toString() ?? '',
+                          onSubmitted: (value) {
+                            showExplanationDialog(index, 'Fiyat');
+                          },
                         )
-                            : Text(product['İskonto']?.toString() ?? ''),
+                            : Row(
+                          children: [
+                            Text(product['Adet Fiyatı']?.toString() ?? ''),
+                            if (product['Fiyat Açıklaması'] != null)
+                              IconButton(
+                                icon: Icon(Icons.info, color: Colors.blue),
+                                onPressed: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return AlertDialog(
+                                        title: Text('Fiyat Değişikliği Bilgisi'),
+                                        content: Text(
+                                            'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).pop();
+                                            },
+                                            child: Text('Tamam'),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
+                          ],
+                        ),
                       ),
+                      DataCell(Text(product['İskonto']?.toString() ?? '')),
                       DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                       DataCell(
-                        isEditing && editingIndex == index
-                            ? Row(
+                        isTotalRow
+                            ? Container()
+                            : Row(
                           children: [
                             IconButton(
-                              icon: Icon(Icons.check, color: Colors.green),
+                              icon: Icon(Icons.edit, color: Colors.blue),
                               onPressed: () {
                                 setState(() {
-                                  isEditing = false;
-                                  editingIndex = -1;
+                                  isEditing = !isEditing;
+                                  editingIndex = index;
+                                  if (isEditing) {
+                                    originalProductData = Map<String, dynamic>.from(product);
+                                    quantityController.text = product['Adet']?.toString() ?? '';
+                                    priceController.text = product['Adet Fiyatı']?.toString() ?? '';
+                                  } else {
+                                    if (quantityController.text.isNotEmpty || priceController.text.isNotEmpty) {
+                                      showExplanationDialog(index, quantityController.text.isNotEmpty ? 'Adet' : 'Fiyat');
+                                    } else {
+                                      saveEditsToDatabase(index);
+                                      updateTotalAndVat();
+                                      originalProductData = null;
+                                    }
+                                  }
                                 });
                               },
                             ),
-                            IconButton(
-                              icon: Icon(Icons.close, color: Colors.red),
-                              onPressed: () {
-                                setState(() {
-                                  isEditing = false;
-                                  editingIndex = -1;
-                                });
-                              },
-                            ),
+                            if (isEditing && editingIndex == index)
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () => removeProduct(index),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.check, color: Colors.green),
+                                    onPressed: () {
+                                      if (quantityController.text.isNotEmpty || priceController.text.isNotEmpty) {
+                                        showExplanationDialog(index, quantityController.text.isNotEmpty ? 'Adet' : 'Fiyat');
+                                      } else {
+                                        saveEditsToDatabase(index);
+                                        updateTotalAndVat();
+                                        originalProductData = null;
+                                        setState(() {
+                                          isEditing = false;
+                                          editingIndex = -1;
+                                        });
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.close, color: Colors.red),
+                                    onPressed: () {
+                                      setState(() {
+                                        customerProducts[index] = originalProductData!;
+                                        originalProductData = null;
+                                        isEditing = false;
+                                        editingIndex = -1;
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
                           ],
-                        )
-                            : IconButton(
-                          icon: Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () {
-                            setState(() {
-                              isEditing = true;
-                              editingIndex = index;
-                            });
-                          },
                         ),
                       ),
                     ]);
