@@ -32,11 +32,13 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   int? currentEditingSubKitIndex;
   List<Map<String, dynamic>> tempProducts = [];
   List<Map<String, dynamic>> originalProducts = [];
+  List<int> currentSelectedIndexes = [];
 
   @override
   void initState() {
     super.initState();
     fetchCustomerProducts();
+    fetchKits();
   }
 
   Future<void> fetchCustomerProducts() async {
@@ -52,6 +54,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       });
       updateTotalAndVat();
     }
+  }
+
+  Future<void> fetchKits() async {
+    var querySnapshot = await FirebaseFirestore.instance.collection('kitler').get();
+    setState(() {
+      mainKits = querySnapshot.docs.map((doc) {
+        var data = doc.data();
+        return {
+          'id': doc.id,
+          'name': data['name'] ?? '',
+          'subKits': List<Map<String, dynamic>>.from(data['subKits'] ?? []),
+          'products': List<Map<String, dynamic>>.from(data['products'] ?? []),
+        };
+      }).toList();
+    });
   }
 
   void updateQuantity(int index, String quantity) {
@@ -280,28 +297,57 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     setState(() {
       if (subKitIndex == null) {
         mainKits[kitIndex]['products'].add({
-          'Detay': product['Detay'],
-          'Kodu': product['Kodu'],
+          'Detay': product['Detay'] ?? '',
+          'Kodu': product['Kodu'] ?? '',
           'Adet': '1',
         });
       } else {
         mainKits[kitIndex]['subKits'][subKitIndex]['products'].add({
-          'Detay': product['Detay'],
-          'Kodu': product['Kodu'],
+          'Detay': product['Detay'] ?? '',
+          'Kodu': product['Kodu'] ?? '',
           'Adet': '1',
         });
       }
     });
+    saveKitsToFirestore();
+  }
+
+  Future<void> saveKitsToFirestore() async {
+    var kitlerCollection = FirebaseFirestore.instance.collection('kitler');
+
+    for (var kit in mainKits) {
+      var kitId = kit['id'];
+      if (kitId == null) {
+        // Yeni kit ekle
+        var newDoc = await kitlerCollection.add({
+          'name': kit['name'],
+          'subKits': kit['subKits'],
+          'products': kit['products'],
+        });
+        setState(() {
+          kit['id'] = newDoc.id;
+        });
+      } else {
+        // Mevcut kiti güncelle
+        await kitlerCollection.doc(kitId).update({
+          'name': kit['name'],
+          'subKits': kit['subKits'],
+          'products': kit['products'],
+        });
+      }
+    }
   }
 
   void createNewMainKit(String kitName) {
     setState(() {
       mainKits.add({
+        'id': null,
         'name': kitName,
         'subKits': [],
         'products': [],
       });
-      //selectedIndexes.clear();
+      currentSelectedIndexes = selectedIndexes.toList(); // Mevcut seçili ürünlerin indekslerini kaydet
+      selectedIndexes.clear();
       showRadioButtons = false;
     });
   }
@@ -310,15 +356,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     setState(() {
       mainKits[kitIndex]['subKits'].add({
         'name': subKitName,
-        'products': List.from(selectedIndexes.map((index) => {
+        'products': List.from(currentSelectedIndexes.map((index) => {
           'Detay': customerProducts[index]['Detay'],
           'Kodu': customerProducts[index]['Kodu'],
           'Adet': customerProducts[index]['Adet'],
         }))
       });
-      selectedIndexes.clear();
-      showRadioButtons = false;
+      currentSelectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
     });
+    saveKitsToFirestore();
   }
 
   void showKitCreationDialog() {
@@ -393,6 +439,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 return ListTile(
                   title: Text(mainKits[index]['name']),
                   onTap: () {
+                    currentSelectedIndexes = selectedIndexes.toList(); // Seçilen ürünleri kaydet
                     Navigator.of(context).pop();
                     showSubKitCreationDialog(index);
                   },
@@ -432,7 +479,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       itemBuilder: (BuildContext context, int index) {
                         var product = tempProducts[index];
                         return ListTile(
-                          title: Text(product['Detay']),
+                          title: Text(product['Detay'] ?? ''),
                           subtitle: TextField(
                             keyboardType: TextInputType.number,
                             decoration: InputDecoration(
@@ -488,6 +535,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                       currentEditingKitIndex = null;
                       currentEditingSubKitIndex = null;
                     });
+                    saveKitsToFirestore();
                     Navigator.of(context).pop();
                   },
                   child: Text('Tamam'),
@@ -516,8 +564,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 children: [
                   ...subKit['products'].map<Widget>((product) {
                     return ListTile(
-                      title: Text(product['Detay']),
-                      subtitle: Text('Kodu: ${product['Kodu']}, Adet: ${product['Adet']}'),
+                      title: Text(product['Detay'] ?? ''),
+                      subtitle: Text('Kodu: ${product['Kodu'] ?? ''}, Adet: ${product['Adet'] ?? ''}'),
                     );
                   }).toList(),
                   ListTile(
