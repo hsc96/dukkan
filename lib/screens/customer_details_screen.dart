@@ -57,7 +57,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   }
 
   Future<void> fetchKits() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection('kitler').get();
+    var querySnapshot = await FirebaseFirestore.instance
+        .collection('kitler')
+        .where('customerName', isEqualTo: widget.customerName)
+        .get();
     setState(() {
       mainKits = querySnapshot.docs.map((doc) {
         var data = doc.data();
@@ -319,18 +322,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       var kitId = kit['id'];
       if (kitId == null) {
         // Yeni kit ekle
-        var newDoc = await kitlerCollection.add({
+        await kitlerCollection.add({
           'name': kit['name'],
+          'customerName': widget.customerName, // Add the customer name
           'subKits': kit['subKits'],
           'products': kit['products'],
-        });
-        setState(() {
-          kit['id'] = newDoc.id;
         });
       } else {
         // Mevcut kiti güncelle
         await kitlerCollection.doc(kitId).update({
           'name': kit['name'],
+          'customerName': widget.customerName, // Add the customer name
           'subKits': kit['subKits'],
           'products': kit['products'],
         });
@@ -343,6 +345,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       mainKits.add({
         'id': null,
         'name': kitName,
+        'customerName': widget.customerName,
         'subKits': [],
         'products': [],
       });
@@ -439,7 +442,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 return ListTile(
                   title: Text(mainKits[index]['name']),
                   onTap: () {
-                    currentSelectedIndexes = selectedIndexes.toList(); // Seçilen ürünleri kaydet
                     Navigator.of(context).pop();
                     showSubKitCreationDialog(index);
                   },
