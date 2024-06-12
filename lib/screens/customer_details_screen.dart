@@ -26,8 +26,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   TextEditingController explanationController = TextEditingController();
   bool showRadioButtons = false;
   Set<int> selectedIndexes = {};
-  List<Map<String, dynamic>> kits = [];
+  List<Map<String, dynamic>> mainKits = [];
   int currentIndex = 0;
+  int? currentEditingKitIndex;
+  int? currentEditingSubKitIndex;
+  List<Map<String, dynamic>> tempProducts = [];
+  List<Map<String, dynamic>> originalProducts = [];
 
   @override
   void initState() {
@@ -215,11 +219,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
-  Future<void> scanBarcodeForKit(int kitIndex) async {
+  Future<void> scanBarcodeForKit(int kitIndex, {int? subKitIndex}) async {
     try {
       var result = await BarcodeScanner.scan();
       var barcode = result.rawContent;
-      fetchProductDetailsForKit(barcode, kitIndex);
+      fetchProductDetailsForKit(barcode, kitIndex, subKitIndex: subKitIndex);
     } catch (e) {
       setState(() {
         print('Barkod tarama hatası: $e');
@@ -227,32 +231,89 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     }
   }
 
-  Future<void> fetchProductDetailsForKit(String barcode, int kitIndex) async {
+  Future<void> fetchProductDetailsForKit(String barcode, int kitIndex, {int? subKitIndex}) async {
     var querySnapshot = await FirebaseFirestore.instance
         .collection('urunler')
         .where('Barkod', isEqualTo: barcode)
         .get();
 
     if (querySnapshot.docs.isNotEmpty) {
-      var product = querySnapshot.docs.first.data();
-      setState(() {
-        kits[kitIndex]['products'].add({
-          'Detay': product['Detay'],
-          'Kodu': product['Kodu'],
-        });
-      });
+      var products = querySnapshot.docs.map((doc) => doc.data()).toList();
+      if (products.length > 1) {
+        showProductSelectionDialog(products, kitIndex, subKitIndex: subKitIndex);
+      } else {
+        addProductToKit(products.first, kitIndex, subKitIndex: subKitIndex);
+      }
     } else {
       print('Ürün bulunamadı.');
     }
   }
 
-  void createNewKit(String kitName) {
+  void showProductSelectionDialog(List<Map<String, dynamic>> products, int kitIndex, {int? subKitIndex}) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürün Seçin'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: products.length,
+              itemBuilder: (BuildContext context, int index) {
+                return ListTile(
+                  title: Text(products[index]['Detay']),
+                  onTap: () {
+                    addProductToKit(products[index], kitIndex, subKitIndex: subKitIndex);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void addProductToKit(Map<String, dynamic> product, int kitIndex, {int? subKitIndex}) {
     setState(() {
-      kits.add({
+      if (subKitIndex == null) {
+        mainKits[kitIndex]['products'].add({
+          'Detay': product['Detay'],
+          'Kodu': product['Kodu'],
+          'Adet': '1',
+        });
+      } else {
+        mainKits[kitIndex]['subKits'][subKitIndex]['products'].add({
+          'Detay': product['Detay'],
+          'Kodu': product['Kodu'],
+          'Adet': '1',
+        });
+      }
+    });
+  }
+
+  void createNewMainKit(String kitName) {
+    setState(() {
+      mainKits.add({
         'name': kitName,
+        'subKits': [],
+        'products': [],
+      });
+      //selectedIndexes.clear();
+      showRadioButtons = false;
+    });
+  }
+
+  void createNewSubKit(int kitIndex, String subKitName) {
+    setState(() {
+      mainKits[kitIndex]['subKits'].add({
+        'name': subKitName,
         'products': List.from(selectedIndexes.map((index) => {
           'Detay': customerProducts[index]['Detay'],
           'Kodu': customerProducts[index]['Kodu'],
+          'Adet': customerProducts[index]['Adet'],
         }))
       });
       selectedIndexes.clear();
@@ -263,6 +324,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void showKitCreationDialog() {
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext context) {
         TextEditingController kitNameController = TextEditingController();
         return AlertDialog(
@@ -275,7 +337,36 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             TextButton(
               onPressed: () {
                 if (kitNameController.text.isNotEmpty) {
-                  createNewKit(kitNameController.text);
+                  createNewMainKit(kitNameController.text);
+                  Navigator.of(context).pop();
+                  showSubKitCreationDialog(mainKits.length - 1);
+                }
+              },
+              child: Text('Oluştur'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showSubKitCreationDialog(int kitIndex) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        TextEditingController subKitNameController = TextEditingController();
+        return AlertDialog(
+          title: Text('Alt Kit İsmi Girin'),
+          content: TextField(
+            controller: subKitNameController,
+            decoration: InputDecoration(hintText: 'Alt Kit İsmi'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (subKitNameController.text.isNotEmpty) {
+                  createNewSubKit(kitIndex, subKitNameController.text);
                   Navigator.of(context).pop();
                 }
               },
@@ -287,28 +378,157 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     );
   }
 
+  void showKitAssignmentDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ana Kit Seçin'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: mainKits.length,
+              itemBuilder: (BuildContext context, int index) {
+                return ListTile(
+                  title: Text(mainKits[index]['name']),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    showSubKitCreationDialog(index);
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void showEditSubKitDialog(int kitIndex, int subKitIndex) {
+    setState(() {
+      currentEditingKitIndex = kitIndex;
+      currentEditingSubKitIndex = subKitIndex;
+      tempProducts = List.from(mainKits[kitIndex]['subKits'][subKitIndex]['products']);
+      originalProducts = List.from(mainKits[kitIndex]['subKits'][subKitIndex]['products']);
+    });
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Alt Kiti Düzenle'),
+              content: Container(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: tempProducts.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        var product = tempProducts[index];
+                        return ListTile(
+                          title: Text(product['Detay']),
+                          subtitle: TextField(
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'Adet',
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                product['Adet'] = value;
+                              });
+                            },
+                            controller: TextEditingController(text: product['Adet']),
+                          ),
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              setState(() {
+                                tempProducts.removeAt(index);
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                    SizedBox(height: 20),
+                    TextButton.icon(
+                      icon: Icon(Icons.camera_alt),
+                      label: Text('Barkod ile Ürün Ekle'),
+                      onPressed: () => scanBarcodeForKit(currentEditingKitIndex!, subKitIndex: currentEditingSubKitIndex),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      mainKits[currentEditingKitIndex!]['subKits'][currentEditingSubKitIndex!]['products'] = originalProducts;
+                      tempProducts = [];
+                      originalProducts = [];
+                      currentEditingKitIndex = null;
+                      currentEditingSubKitIndex = null;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Vazgeç'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      mainKits[currentEditingKitIndex!]['subKits'][currentEditingSubKitIndex!]['products'] = tempProducts;
+                      tempProducts = [];
+                      originalProducts = [];
+                      currentEditingKitIndex = null;
+                      currentEditingSubKitIndex = null;
+                    });
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Tamam'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget buildKitsList() {
     return ListView.builder(
       shrinkWrap: true,
-      itemCount: kits.length,
+      itemCount: mainKits.length,
       itemBuilder: (context, index) {
-        var kit = kits[index];
+        var kit = mainKits[index];
         return ExpansionTile(
           title: Text(kit['name']),
           children: [
-            ...kit['products'].map<Widget>((product) {
-              return ListTile(
-                title: Text(product['Detay']),
-                subtitle: Text('Kodu: ${product['Kodu']}'),
+            ...kit['subKits'].map<Widget>((subKit) {
+              int subKitIndex = kit['subKits'].indexOf(subKit);
+              return ExpansionTile(
+                title: Text(subKit['name']),
+                children: [
+                  ...subKit['products'].map<Widget>((product) {
+                    return ListTile(
+                      title: Text(product['Detay']),
+                      subtitle: Text('Kodu: ${product['Kodu']}, Adet: ${product['Adet']}'),
+                    );
+                  }).toList(),
+                  ListTile(
+                    title: ElevatedButton(
+                      onPressed: () => showEditSubKitDialog(index, subKitIndex),
+                      child: Text('Düzenle'),
+                    ),
+                  ),
+                ],
               );
             }).toList(),
-            ListTile(
-              title: TextButton.icon(
-                icon: Icon(Icons.camera_alt),
-                label: Text('Barkod ile Ürün Ekle'),
-                onPressed: () => scanBarcodeForKit(index),
-              ),
-            ),
           ],
         );
       },
@@ -363,9 +583,18 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             if (showRadioButtons)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: TextButton(
-                  onPressed: showKitCreationDialog,
-                  child: Text('Kit Oluştur'),
+                child: Row(
+                  children: [
+                    ElevatedButton(
+                      onPressed: showKitCreationDialog,
+                      child: Text('Kit Oluştur'),
+                    ),
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: showKitAssignmentDialog,
+                      child: Text('Kit Eşleştir'),
+                    ),
+                  ],
                 ),
               ),
             Expanded(
