@@ -4,7 +4,7 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import '../utils/colors.dart';
-import 'package:intl/intl.dart'; // Tarih formatı için eklendi
+import 'package:intl/intl.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
 
 class CustomerDetailsScreen extends StatefulWidget {
@@ -104,7 +104,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void showExplanationDialog(int index, String type) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Dialog ekranı bilgi girilmeden kapanmasın
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$type Değişikliği Açıklaması'),
@@ -133,7 +133,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     isEditing = false;
                     editingIndex = -1;
                     originalProductData = null;
-                    explanationController.clear(); // Dialog kapandıktan sonra açıklama alanını temizle
+                    explanationController.clear();
                   });
                   Navigator.of(context).pop();
                 }
@@ -324,7 +324,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         // Yeni kit ekle
         await kitlerCollection.add({
           'name': kit['name'],
-          'customerName': widget.customerName, // Add the customer name
+          'customerName': widget.customerName,
           'subKits': kit['subKits'],
           'products': kit['products'],
         });
@@ -332,7 +332,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         // Mevcut kiti güncelle
         await kitlerCollection.doc(kitId).update({
           'name': kit['name'],
-          'customerName': widget.customerName, // Add the customer name
+          'customerName': widget.customerName,
           'subKits': kit['subKits'],
           'products': kit['products'],
         });
@@ -349,7 +349,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         'subKits': [],
         'products': [],
       });
-      currentSelectedIndexes = selectedIndexes.toList(); // Mevcut seçili ürünlerin indekslerini kaydet
+      currentSelectedIndexes = selectedIndexes.toList();
       selectedIndexes.clear();
       showRadioButtons = false;
     });
@@ -359,13 +359,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     setState(() {
       mainKits[kitIndex]['subKits'].add({
         'name': subKitName,
-        'products': List.from(currentSelectedIndexes.map((index) => {
-          'Detay': customerProducts[index]['Detay'],
-          'Kodu': customerProducts[index]['Kodu'],
-          'Adet': customerProducts[index]['Adet'],
-        }))
+        'products': List.from(currentSelectedIndexes.map((index) {
+          debugPrint('Eklenecek Ürün: ${customerProducts[index]}');
+          return {
+            'Detay': customerProducts[index]['Detay'],
+            'Kodu': customerProducts[index]['Kodu'],
+            'Adet': customerProducts[index]['Adet'],
+          };
+        })),
       });
-      currentSelectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
+      currentSelectedIndexes.clear();
     });
     saveKitsToFirestore();
   }
@@ -442,8 +445,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 return ListTile(
                   title: Text(mainKits[index]['name']),
                   onTap: () {
+                    debugPrint('Ana Kit Seçildi: ${mainKits[index]['name']}');
                     Navigator.of(context).pop();
-                    showSubKitCreationDialog(index);
+                    showSubKitCreationDialogForAssignment(index);
                   },
                 );
               },
@@ -452,6 +456,54 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         );
       },
     );
+  }
+
+  void showSubKitCreationDialogForAssignment(int kitIndex) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        TextEditingController subKitNameController = TextEditingController();
+        return AlertDialog(
+          title: Text('Alt Kit İsmi Girin'),
+          content: TextField(
+            controller: subKitNameController,
+            decoration: InputDecoration(hintText: 'Alt Kit İsmi'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (subKitNameController.text.isNotEmpty) {
+                  debugPrint('Alt Kit İsmi Girildi: ${subKitNameController.text}');
+                  createNewSubKitForAssignment(kitIndex, subKitNameController.text);
+                  Navigator.of(context).pop();
+                }
+              },
+              child: Text('Oluştur'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void createNewSubKitForAssignment(int kitIndex, String subKitName) {
+    setState(() {
+      mainKits[kitIndex]['subKits'].add({
+        'name': subKitName,
+        'products': List.from(selectedIndexes.map((index) {
+          debugPrint('Eklenecek Ürün: ${customerProducts[index]}');
+          return {
+            'Detay': customerProducts[index]['Detay'],
+            'Kodu': customerProducts[index]['Kodu'],
+            'Adet': customerProducts[index]['Adet'],
+          };
+        })),
+      });
+      selectedIndexes.clear();
+      showRadioButtons = false;
+    });
+    saveKitsToFirestore();
   }
 
   void showEditSubKitDialog(int kitIndex, int subKitIndex) {
