@@ -4,7 +4,7 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import '../utils/colors.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart'; // Tarih formatı için eklendi
 import 'package:barcode_scan2/barcode_scan2.dart';
 
 class CustomerDetailsScreen extends StatefulWidget {
@@ -59,8 +59,9 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Future<void> fetchKits() async {
     var querySnapshot = await FirebaseFirestore.instance
         .collection('kitler')
-        .where('customerName', isEqualTo: widget.customerName)
+        .where('customerName', isEqualTo: widget.customerName) // Yalnızca ilgili müşteri için kitleri getir
         .get();
+
     setState(() {
       mainKits = querySnapshot.docs.map((doc) {
         var data = doc.data();
@@ -73,7 +74,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       }).toList();
     });
   }
-
   void updateQuantity(int index, String quantity) {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
@@ -104,7 +104,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void showExplanationDialog(int index, String type) {
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: false, // Dialog ekranı bilgi girilmeden kapanmasın
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$type Değişikliği Açıklaması'),
@@ -133,7 +133,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     isEditing = false;
                     editingIndex = -1;
                     originalProductData = null;
-                    explanationController.clear();
+                    explanationController.clear(); // Dialog kapandıktan sonra açıklama alanını temizle
                   });
                   Navigator.of(context).pop();
                 }
@@ -322,19 +322,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       var kitId = kit['id'];
       if (kitId == null) {
         // Yeni kit ekle
-        await kitlerCollection.add({
+        var newKitDocRef = kitlerCollection.doc();
+        await newKitDocRef.set({
           'name': kit['name'],
-          'customerName': widget.customerName,
           'subKits': kit['subKits'],
           'products': kit['products'],
+          'customerName': widget.customerName, // Her kit müşteriye özel olacak
         });
+        kit['id'] = newKitDocRef.id; // Yeni kitin ID'sini kaydet
       } else {
         // Mevcut kiti güncelle
         await kitlerCollection.doc(kitId).update({
           'name': kit['name'],
-          'customerName': widget.customerName,
           'subKits': kit['subKits'],
           'products': kit['products'],
+          'customerName': widget.customerName, // Her kit müşteriye özel olacak
         });
       }
     }
@@ -345,11 +347,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       mainKits.add({
         'id': null,
         'name': kitName,
-        'customerName': widget.customerName,
         'subKits': [],
         'products': [],
       });
-      currentSelectedIndexes = selectedIndexes.toList();
+      currentSelectedIndexes = selectedIndexes.toList(); // Mevcut seçili ürünlerin indekslerini kaydet
       selectedIndexes.clear();
       showRadioButtons = false;
     });
@@ -368,7 +369,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           };
         })),
       });
-      currentSelectedIndexes.clear();
+      currentSelectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
     });
     saveKitsToFirestore();
   }
@@ -500,7 +501,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           };
         })),
       });
-      selectedIndexes.clear();
+      selectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
       showRadioButtons = false;
     });
     saveKitsToFirestore();
@@ -756,9 +757,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             onSubmitted: (value) {
                               handleEdit(index, 'Adet');
                             },
-                            onEditingComplete: () {
-                              handleEdit(index, 'Adet');
-                            },
                           )
                               : Row(
                             children: [
@@ -804,9 +802,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                             },
                             controller: priceController..text = product['Adet Fiyatı']?.toString() ?? '',
                             onSubmitted: (value) {
-                              handleEdit(index, 'Fiyat');
-                            },
-                            onEditingComplete: () {
                               handleEdit(index, 'Fiyat');
                             },
                           )
