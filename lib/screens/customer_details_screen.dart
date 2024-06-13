@@ -18,6 +18,7 @@ class CustomerDetailsScreen extends StatefulWidget {
 
 class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   List<Map<String, dynamic>> customerProducts = [];
+  List<Map<String, dynamic>> quotes = [];
   bool isEditing = false;
   int editingIndex = -1;
   Map<String, dynamic>? originalProductData;
@@ -39,6 +40,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     super.initState();
     fetchCustomerProducts();
     fetchKits();
+    fetchQuotes();
   }
 
   Future<void> fetchCustomerProducts() async {
@@ -74,6 +76,26 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       }).toList();
     });
   }
+
+  Future<void> fetchQuotes() async {
+    var querySnapshot = await FirebaseFirestore.instance
+        .collection('quotes')
+        .where('customerName', isEqualTo: widget.customerName)
+        .get();
+
+    setState(() {
+      quotes = querySnapshot.docs.map((doc) {
+        var data = doc.data();
+        return {
+          'id': doc.id,
+          'quoteNumber': data['quoteNumber'] ?? '',
+          'products': List<Map<String, dynamic>>.from(data['products'] ?? []),
+          'date': data['date'] ?? '',
+        };
+      }).toList();
+    });
+  }
+
   void updateQuantity(int index, String quantity) {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
@@ -647,7 +669,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         children: [
           SizedBox(height: 20),
           ToggleButtons(
-            isSelected: [currentIndex == 0, currentIndex == 1],
+            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2],
             onPressed: (int index) {
               setState(() {
                 currentIndex = index;
@@ -661,6 +683,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text('Kitler'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text('Teklifler'),
               ),
             ],
           ),
@@ -904,6 +930,60 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ),
           ],
           if (currentIndex == 1) Expanded(child: buildKitsList()),
+          if (currentIndex == 2)
+            Expanded(
+              child: ListView.builder(
+                itemCount: quotes.length,
+                itemBuilder: (context, index) {
+                  var quote = quotes[index];
+                  return ListTile(
+                    title: Text('Teklif No: ${quote['quoteNumber']}'),
+                    subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'].toDate())}'),
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text('Teklif Detayları'),
+                            content: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: [
+                                  DataColumn(label: Text('Kodu')),
+                                  DataColumn(label: Text('Detay')),
+                                  DataColumn(label: Text('Adet')),
+                                  DataColumn(label: Text('Adet Fiyatı')),
+                                  DataColumn(label: Text('İskonto')),
+                                  DataColumn(label: Text('Toplam Fiyat')),
+                                ],
+                                rows: (quote['products'] as List<dynamic>).map((product) {
+                                  return DataRow(cells: [
+                                    DataCell(Text(product['Kodu']?.toString() ?? '')),
+                                    DataCell(Text(product['Detay']?.toString() ?? '')),
+                                    DataCell(Text(product['Adet']?.toString() ?? '')),
+                                    DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                                    DataCell(Text(product['İskonto']?.toString() ?? '')),
+                                    DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                                  ]);
+                                }).toList(),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                },
+                                child: Text('Kapat'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),

@@ -424,6 +424,51 @@ class _ScanScreenState extends State<ScanScreen> {
     return count;
   }
 
+  Future<void> generateQuote() async {
+    if (selectedCustomer == null) return;
+
+    // Teklif numarasını oluştur
+    String currentYear = DateFormat('yyyy').format(DateTime.now());
+    String prefix = 'CSK$currentYear';
+    var querySnapshot = await FirebaseFirestore.instance
+        .collection('quotes')
+        .where('quoteNumber', isGreaterThanOrEqualTo: prefix)
+        .where('quoteNumber', isLessThan: prefix + 'Z')
+        .orderBy('quoteNumber', descending: true)
+        .limit(1)
+        .get();
+
+    int nextNumber = 1;
+    if (querySnapshot.docs.isNotEmpty) {
+      String lastQuoteNumber = querySnapshot.docs.first['quoteNumber'];
+      String lastNumberStr = lastQuoteNumber.substring(prefix.length);
+      int lastNumber = int.tryParse(lastNumberStr) ?? 0;
+      nextNumber = lastNumber + 1;
+    }
+
+    String quoteNumber = '$prefix${nextNumber.toString().padLeft(4, '0')}';
+
+    // Teklifi Firestore'a kaydet
+    await FirebaseFirestore.instance.collection('quotes').add({
+      'customerName': selectedCustomer,
+      'quoteNumber': quoteNumber,
+      'products': scannedProducts,
+      'date': DateTime.now(),
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Teklif başarıyla oluşturuldu')),
+    );
+
+    // Müşteri detayları ekranına yönlendir
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -591,9 +636,7 @@ class _ScanScreenState extends State<ScanScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: () {
-                    saveAsPDF();
-                  },
+                  onPressed: generateQuote,
                   child: Text('Teklif Ver'),
                 ),
                 ElevatedButton(
