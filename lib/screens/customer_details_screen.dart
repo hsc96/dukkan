@@ -4,13 +4,13 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import '../utils/colors.dart';
-import 'package:intl/intl.dart'; // Tarih formatı için eklendi
+import 'package:intl/intl.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
-import 'dart:io'; // Dosya işlemleri için
-import 'package:path_provider/path_provider.dart'; // Dosya yolları için
-import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
-import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
-import 'pdf_template.dart'; // PDF şablonu için
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:open_file/open_file.dart';
+import 'pdf_template.dart';
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -69,7 +69,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   Future<void> fetchKits() async {
     var querySnapshot = await FirebaseFirestore.instance
         .collection('kitler')
-        .where('customerName', isEqualTo: widget.customerName) // Yalnızca ilgili müşteri için kitleri getir
+        .where('customerName', isEqualTo: widget.customerName)
         .get();
 
     setState(() {
@@ -98,11 +98,12 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           'id': doc.id,
           'quoteNumber': data['quoteNumber'] ?? '',
           'products': List<Map<String, dynamic>>.from(data['products'] ?? []),
-          'date': data['date'] ?? '',
+          'date': (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
         };
       }).toList();
     });
   }
+
 
   void updateQuantity(int index, String quantity) {
     setState(() {
@@ -125,7 +126,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   void showExplanationDialog(int index, String type) {
     showDialog(
       context: context,
-      barrierDismissible: false, // Dialog ekranı bilgi girilmeden kapanmasın
+      barrierDismissible: false,
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('$type Değişikliği Açıklaması'),
@@ -155,7 +156,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     isEditing = false;
                     editingIndex = -1;
                     originalProductData = null;
-                    explanationController.clear(); // Dialog kapandıktan sonra açıklama alanını temizle
+                    explanationController.clear();
                   });
                   Navigator.of(context).pop();
                 }
@@ -249,8 +250,8 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
                   setState(() {
                     updateTotalAndVat();
-                    isEditing = false; // Düzenleme modundan çık
-                    editingIndex = -1; // Düzenlenen indeksi sıfırla
+                    isEditing = false;
+                    editingIndex = -1;
                   });
                 }
                 Navigator.of(context).pop();
@@ -274,6 +275,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       });
     }
   }
+
   Future<void> fetchProductDetailsForKit(String barcode, int kitIndex, {int? subKitIndex}) async {
     var querySnapshot = await FirebaseFirestore.instance
         .collection('urunler')
@@ -282,14 +284,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
 
     if (querySnapshot.docs.isNotEmpty) {
       var products = querySnapshot.docs.map((doc) => doc.data()).toList();
-
-      // Ürünleri benzersiz kılmak için bir set kullan
       var uniqueProducts = <String, Map<String, dynamic>>{};
       for (var product in products) {
         uniqueProducts[product['Kodu']] = product;
       }
-
-      // Benzersiz ürün listesini al
       var uniqueProductList = uniqueProducts.values.toList();
 
       if (uniqueProductList.length > 1) {
@@ -301,6 +299,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       print('Ürün bulunamadı.');
     }
   }
+
   void showProductSelectionDialog(List<Map<String, dynamic>> products, int kitIndex, {int? subKitIndex}) {
     showDialog(
       context: context,
@@ -353,22 +352,20 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
     for (var kit in mainKits) {
       var kitId = kit['id'];
       if (kitId == null) {
-        // Yeni kit ekle
         var newKitDocRef = kitlerCollection.doc();
         await newKitDocRef.set({
           'name': kit['name'],
           'subKits': kit['subKits'],
           'products': kit['products'],
-          'customerName': widget.customerName, // Her kit müşteriye özel olacak
+          'customerName': widget.customerName,
         });
-        kit['id'] = newKitDocRef.id; // Yeni kitin ID'sini kaydet
+        kit['id'] = newKitDocRef.id;
       } else {
-        // Mevcut kiti güncelle
         await kitlerCollection.doc(kitId).update({
           'name': kit['name'],
           'subKits': kit['subKits'],
           'products': kit['products'],
-          'customerName': widget.customerName, // Her kit müşteriye özel olacak
+          'customerName': widget.customerName,
         });
       }
     }
@@ -382,7 +379,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         'subKits': [],
         'products': [],
       });
-      currentSelectedIndexes = selectedIndexes.toList(); // Mevcut seçili ürünlerin indekslerini kaydet
+      currentSelectedIndexes = selectedIndexes.toList();
       selectedIndexes.clear();
       showRadioButtons = false;
     });
@@ -401,7 +398,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           };
         })),
       });
-      currentSelectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
+      currentSelectedIndexes.clear();
     });
     saveKitsToFirestore();
   }
@@ -533,7 +530,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
           };
         })),
       });
-      selectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
+      selectedIndexes.clear();
       showRadioButtons = false;
     });
     saveKitsToFirestore();
@@ -857,7 +854,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         }
       }
       updateTotalAndVat();
-      saveEditsToDatabase(0); // Veritabanını güncelle
+      saveEditsToDatabase(0);
       selectedQuoteIndexes.clear();
       showSelectionButtons = false;
     });
@@ -883,13 +880,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         var kit = mainKits[index];
 
         return ExpansionTile(
-          title: Text(kit['name']),
+          title: Row(
+            children: [
+              Text(kit['name']),
+            ],
+          ),
           children: [
             ...kit['subKits'].map<Widget>((subKit) {
               int subKitIndex = kit['subKits'].indexOf(subKit);
 
               return ExpansionTile(
-                title: Text(subKit['name']),
+                title: Row(
+                  children: [
+                    Text(subKit['name']),
+                  ],
+                ),
                 children: [
                   ...subKit['products'].map<Widget>((product) {
                     return ListTile(
@@ -1241,7 +1246,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                   var quote = quotes[index];
                   return ExpansionTile(
                     title: Text('Teklif No: ${quote['quoteNumber']}'),
-                    subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'].toDate())}'),
+                    subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'])}'),
                     children: [
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
