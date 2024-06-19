@@ -381,7 +381,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         'name': kitName,
         'subKits': [],
         'products': [],
-        'creationDate': DateTime.now(), // Tarih bilgisi ekle
       });
       currentSelectedIndexes = selectedIndexes.toList(); // Mevcut seçili ürünlerin indekslerini kaydet
       selectedIndexes.clear();
@@ -401,7 +400,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             'Adet': customerProducts[index]['Adet'],
           };
         })),
-        'creationDate': DateTime.now(), // Tarih bilgisi ekle
       });
       currentSelectedIndexes.clear(); // Alt kit oluşturulduktan sonra seçili ürünleri temizle
     });
@@ -883,35 +881,15 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       itemCount: mainKits.length,
       itemBuilder: (context, index) {
         var kit = mainKits[index];
-        var kitCreationDate = kit['creationDate'] != null ? DateFormat('dd MMMM yyyy').format((kit['creationDate'] as Timestamp).toDate()) : '';
 
         return ExpansionTile(
-          title: Row(
-            children: [
-              Text(kit['name']),
-              SizedBox(width: 10),
-              Text(
-                kitCreationDate,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ],
-          ),
+          title: Text(kit['name']),
           children: [
             ...kit['subKits'].map<Widget>((subKit) {
               int subKitIndex = kit['subKits'].indexOf(subKit);
-              var subKitCreationDate = subKit['creationDate'] != null ? DateFormat('dd MMMM yyyy').format((subKit['creationDate'] as Timestamp).toDate()) : '';
 
               return ExpansionTile(
-                title: Row(
-                  children: [
-                    Text(subKit['name']),
-                    SizedBox(width: 10),
-                    Text(
-                      subKitCreationDate,
-                      style: TextStyle(color: Colors.grey, fontSize: 12),
-                    ),
-                  ],
-                ),
+                title: Text(subKit['name']),
                 children: [
                   ...subKit['products'].map<Widget>((product) {
                     return ListTile(
