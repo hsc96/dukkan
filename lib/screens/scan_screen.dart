@@ -32,6 +32,7 @@ class _ScanScreenState extends State<ScanScreen> {
   String euroKur = "";
   String currentDate = DateFormat('d MMMM y', 'tr_TR').format(DateTime.now()); // Tarih formatı ayarlandı.
 
+
   List<Map<String, dynamic>> scannedProducts = [];
   List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
   final FirestoreService firestoreService = FirestoreService();
@@ -39,6 +40,10 @@ class _ScanScreenState extends State<ScanScreen> {
   double toplamTutar = 0.0;
   double kdv = 0.0;
   double genelToplam = 0.0;
+  bool isEditing = false;
+  int editingIndex = -1;
+  Map<String, dynamic>? originalProductData;
+  TextEditingController quantityController = TextEditingController();
 
   @override
   void initState() {
@@ -145,11 +150,11 @@ class _ScanScreenState extends State<ScanScreen> {
 
       productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
       productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (discountedPrice * 1).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (discountedPrice * (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
     } else {
       productData['İskonto'] = '0%';
       productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (priceInTl * (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
     }
   }
 
@@ -223,9 +228,10 @@ class _ScanScreenState extends State<ScanScreen> {
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = originalProducts[i];
       await applyDiscountToProduct(productData, productData['Marka']);
+      double adet = double.tryParse(scannedProducts[i]['Adet']?.toString() ?? '1') ?? 1;
       setState(() {
         scannedProducts[i]['Adet Fiyatı'] = productData['Adet Fiyatı'];
-        scannedProducts[i]['Toplam Fiyat'] = productData['Toplam Fiyat'];
+        scannedProducts[i]['Toplam Fiyat'] = (adet * (double.tryParse(productData['Adet Fiyatı'] ?? '0') ?? 0)).toStringAsFixed(2);
         scannedProducts[i]['İskonto'] = productData['İskonto'];
       });
     }
@@ -469,6 +475,22 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
+  void handleEditSubmit(int index) {
+    setState(() {
+      isEditing = false;
+      editingIndex = -1;
+    });
+  }
+
+  void handleEditCancel(int index) {
+    setState(() {
+      scannedProducts[index] = originalProductData!;
+      originalProductData = null;
+      isEditing = false;
+      editingIndex = -1;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -590,38 +612,75 @@ class _ScanScreenState extends State<ScanScreen> {
                     DataColumn(label: Text('Adet Fiyatı')),
                     DataColumn(label: Text('İskonto')),
                     DataColumn(label: Text('Toplam Fiyat')),
-                    DataColumn(label: Text('Sil')),
+                    DataColumn(label: Text('Düzenle')),
                   ],
                   rows: scannedProducts.map((product) {
                     int index = scannedProducts.indexOf(product);
+                    bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+                        product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+                        product['Adet Fiyatı']?.toString() == 'Genel Toplam';
+
                     return DataRow(cells: [
                       DataCell(Text(product['Kodu']?.toString() ?? '')),
                       DataCell(Text(product['Detay']?.toString() ?? '')),
                       DataCell(
-                        product['Adet Fiyatı']?.toString().contains('Toplam Tutar') == true ||
-                            product['Adet Fiyatı']?.toString().contains('KDV %20') == true ||
-                            product['Adet Fiyatı']?.toString().contains('Genel Toplam') == true
+                        isTotalRow
                             ? Text('')
                             : TextField(
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(),
                           ),
-                          onChanged: (value) => updateQuantity(index, value),
-                          controller: TextEditingController()..text = product['Adet']?.toString() ?? '',
+                          onChanged: (value) {
+                            updateQuantity(index, value);
+                          },
+                          controller: TextEditingController(text: product['Adet']?.toString() ?? ''),
+                          onSubmitted: (value) {
+                            handleEditSubmit(index);
+                          },
                         ),
                       ),
                       DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
                       DataCell(Text(product['İskonto']?.toString() ?? '')),
                       DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                       DataCell(
-                        product['Adet Fiyatı']?.toString().contains('Toplam Tutar') == true ||
-                            product['Adet Fiyatı']?.toString().contains('KDV %20') == true ||
-                            product['Adet Fiyatı']?.toString().contains('Genel Toplam') == true
-                            ? Text('')
-                            : IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () => removeProduct(index),
+                        isTotalRow
+                            ? Container()
+                            : Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () {
+                                setState(() {
+                                  isEditing = true;
+                                  editingIndex = index;
+                                  originalProductData = Map<String, dynamic>.from(product);
+                                  quantityController.text = product['Adet']?.toString() ?? '';
+                                });
+                              },
+                            ),
+                            if (isEditing && editingIndex == index)
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(Icons.check, color: Colors.green),
+                                    onPressed: () {
+                                      handleEditSubmit(index);
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete, color: Colors.red),
+                                    onPressed: () => removeProduct(index),
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.close, color: Colors.red),
+                                    onPressed: () {
+                                      handleEditCancel(index);
+                                    },
+                                  ),
+                                ],
+                              ),
+                          ],
                         ),
                       ),
                     ]);
