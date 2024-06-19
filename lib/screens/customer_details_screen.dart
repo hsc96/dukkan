@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:open_file/open_file.dart';
 import 'pdf_template.dart';
+import 'processed_screen.dart'; // Yeni widget dosyasını içe aktarıyoruz.
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -103,7 +104,6 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       }).toList();
     });
   }
-
 
   void updateQuantity(int index, String quantity) {
     setState(() {
@@ -651,13 +651,21 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 controller: quantityController,
                 decoration: InputDecoration(labelText: 'Adet'),
                 keyboardType: TextInputType.number,
-                readOnly: true,
+                onChanged: (value) {
+                  setState(() {
+                    quoteProduct['Adet'] = value;
+                  });
+                },
               ),
               TextField(
                 controller: priceController,
                 decoration: InputDecoration(labelText: 'Adet Fiyatı'),
                 keyboardType: TextInputType.number,
-                readOnly: true,
+                onChanged: (value) {
+                  setState(() {
+                    quoteProduct['Adet Fiyatı'] = value;
+                  });
+                },
               ),
             ],
           ),
@@ -674,35 +682,55 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
             ),
             TextButton(
               onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: Text('Uyarı'),
-                      content: Text('Tekliften gelen ürünlerin adet veya fiyat bilgisi değiştirilemez.'),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                          child: Text('Tamam'),
-                        ),
-                      ],
-                    );
-                  },
-                );
+                showExplanationDialogForQuoteProduct(quoteIndex, productIndex);
               },
-              child: Text('Sil'),
+              child: Text('Kaydet'),
             ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showExplanationDialogForQuoteProduct(int quoteIndex, int productIndex) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Değişiklik Açıklaması'),
+          content: TextField(
+            controller: explanationController,
+            decoration: InputDecoration(hintText: 'Değişiklik nedeni'),
+          ),
+          actions: [
             TextButton(
               onPressed: () {
-                setState(() {
-                  quoteProduct = originalProductData!;
-                  originalProductData = null;
-                });
-                Navigator.of(context).pop();
+                if (explanationController.text.isNotEmpty) {
+                  setState(() {
+                    var quoteProduct = quotes[quoteIndex]['products'][productIndex];
+                    if (quantityController.text.isNotEmpty) {
+                      quoteProduct['Adet Açıklaması'] = explanationController.text;
+                      quoteProduct['Eski Adet'] = originalProductData?['Adet']?.toString();
+                      quoteProduct['Adet'] = quantityController.text;
+                    }
+                    if (priceController.text.isNotEmpty) {
+                      quoteProduct['Fiyat Açıklaması'] = explanationController.text;
+                      quoteProduct['Eski Fiyat'] = originalProductData?['Adet Fiyatı']?.toString();
+                      quoteProduct['Adet Fiyatı'] = priceController.text;
+                    }
+                    updateTotalAndVatForQuote(quoteIndex); // Toplam ve KDV'yi güncelle
+                    saveQuoteToDatabase(quoteIndex); // Veritabanına kaydet
+                    originalProductData = null;
+                  });
+                  Navigator.of(context).pop();
+                  setState(() {
+                    isEditing = false; // Düzenleme modunu kapat
+                    editingIndex = -1;
+                  });
+                }
               },
-              child: Text('Kapat'),
+              child: Text('Kaydet'),
             ),
           ],
         );
@@ -752,6 +780,16 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       });
 
       quotes[quoteIndex]['products'] = quoteProducts;
+    });
+  }
+
+  Future<void> saveQuoteToDatabase(int quoteIndex) async {
+    var quoteCollection = FirebaseFirestore.instance.collection('quotes');
+    var quote = quotes[quoteIndex];
+    var docRef = quoteCollection.doc(quote['id']);
+
+    await docRef.update({
+      'products': quote['products'],
     });
   }
 
@@ -926,10 +964,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         children: [
           SizedBox(height: 20),
           ToggleButtons(
-            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2],
+            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2, currentIndex == 3],
             onPressed: (int index) {
               setState(() {
-                currentIndex = index;
+                if (index == 3) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ProcessedScreen(customerName: widget.customerName)),
+                  );
+                } else {
+                  currentIndex = index;
+                }
               });
             },
             children: [
@@ -944,6 +989,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text('Teklifler'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text('İşlenenler'),
               ),
             ],
           ),
