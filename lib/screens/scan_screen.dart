@@ -332,6 +332,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'recipient': recipient,
         'contactPerson': contactPerson,
         'orderMethod': orderMethod,
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()), // Sipariş Tarihini ekle
       };
     }).toList();
 
@@ -359,6 +360,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+
 
   Future<void> showProcessingDialog() async {
     String? whoTook;
