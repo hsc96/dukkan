@@ -1,80 +1,57 @@
-import 'package:flutter/services.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
-import 'package:intl/intl.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 class PDFTemplate {
-  static Future<pw.Document> generateQuote(String customerName, List<Map<String, dynamic>> products, double toplamTutar, double kdv, double genelToplam, String teslimTarihi, String teklifSuresi) async {
+  static Future<pw.Document> generateQuote(
+      String customerName,
+      List<Map<String, dynamic>> products,
+      double total,
+      double vat,
+      double grandTotal,
+      String deliveryDate,
+      String quoteDuration) async {
     final pdf = pw.Document();
-    final font = pw.Font.ttf(await rootBundle.load("lib/assets/fonts/Roboto-Regular.ttf"));
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Column(
-            children: [
-              // Üst kısım
-              pw.Container(
-                color: PdfColors.deepOrange,
-                height: 20,
-              ),
-              pw.SizedBox(height: 10),
-              // Başlık ve müşteri bilgileri
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.start,
-                    children: [
-                      pw.Text(
-                        'Coşkun Hidrolik Pnömatik Sız. Elemanları',
-                        style: pw.TextStyle(fontSize: 18, font: font),
-                      ),
-                      pw.Text('Çorlu / Türkiye', style: pw.TextStyle(font: font)),
-                      pw.Text('İletişim Bilgileri', style: pw.TextStyle(font: font)),
-                    ],
-                  ),
-                  pw.Column(
-                    crossAxisAlignment: pw.CrossAxisAlignment.end,
-                    children: [
-                      pw.Text('FİYAT TEKLİFİ', style: pw.TextStyle(fontSize: 18, font: font)),
-                      pw.SizedBox(height: 10),
-                      pw.Text('TARİH: ${DateFormat('dd.MM.yyyy').format(DateTime.now())}', style: pw.TextStyle(font: font)),
-                      pw.Text('TESLİM TARİHİ: $teslimTarihi', style: pw.TextStyle(font: font)),
-                      pw.Text('TEKLİF SÜRESİ: $teklifSuresi gün', style: pw.TextStyle(font: font)),
-                    ],
-                  ),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-              // Ürün tablosu
-              pw.Table.fromTextArray(
-                headers: ['Açıklama', 'Birim', 'Adet Fiyat', 'Toplam Fiyat'],
-                data: products.map((product) {
-                  return [
-                    product['Detay']?.toString() ?? '',
-                    product['Adet']?.toString() ?? '',
-                    product['Adet Fiyatı']?.toString() ?? '',
-                    product['Toplam Fiyat']?.toString() ?? '',
-                  ];
-                }).toList(),
-                headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, font: font),
-                cellStyle: pw.TextStyle(font: font),
-                cellHeight: 25,
-              ),
-              pw.SizedBox(height: 20),
-              // Alt kısım
-
-              pw.SizedBox(height: 20),
-              // Alt kısımda tekrar turuncu şerit
-              pw.Container(
-                color: PdfColors.deepOrange,
-                height: 20,
-              ),
-            ],
-          );
-        },
+        build: (pw.Context context) => pw.Column(
+          children: [
+            pw.Text('Teklif', style: pw.TextStyle(fontSize: 24)),
+            pw.SizedBox(height: 16),
+            pw.Text('Müşteri: $customerName', style: pw.TextStyle(fontSize: 18)),
+            pw.SizedBox(height: 16),
+            pw.Table.fromTextArray(
+              headers: ['Kodu', 'Detay', 'Adet', 'Adet Fiyatı', 'İskonto', 'Toplam Fiyat'],
+              data: products.map((product) {
+                return [
+                  product['Kodu'],
+                  product['Detay'],
+                  product['Adet'],
+                  product['Adet Fiyatı'],
+                  product['İskonto'],
+                  product['Toplam Fiyat'],
+                ];
+              }).toList(),
+            ),
+            pw.SizedBox(height: 16),
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.end,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text('Toplam: \$${total.toStringAsFixed(2)}'),
+                    pw.Text('KDV: \$${vat.toStringAsFixed(2)}'),
+                    pw.Text('Genel Toplam: \$${grandTotal.toStringAsFixed(2)}'),
+                  ],
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 16),
+            pw.Text('Teslim Tarihi: $deliveryDate', style: pw.TextStyle(fontSize: 18)),
+            pw.Text('Teklif Süresi: $quoteDuration', style: pw.TextStyle(fontSize: 18)),
+          ],
+        ),
       ),
     );
 
