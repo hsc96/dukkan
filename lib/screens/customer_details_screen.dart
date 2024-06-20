@@ -1124,18 +1124,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                         DataCell(
                           Row(
                             children: [
-                              Text(product['Kodu']?.toString() ?? ''),
-                              if (product['Teklif Numarası'] != null)
+                              if (!isTotalRow && product['whoTook'] != null)
                                 IconButton(
-                                  icon: Icon(Icons.info, color: Colors.blue),
+                                  icon: Icon(Icons.info, color: Colors.orange),
                                   onPressed: () {
                                     showDialog(
                                       context: context,
                                       builder: (BuildContext context) {
                                         return AlertDialog(
-                                          title: Text('Teklif Bilgisi'),
+                                          title: Text('Satış Bilgisi'),
                                           content: Text(
-                                              'Teklif Numarası: ${product['Teklif Numarası']}\nSiparişe Çeviren Kişi: ${product['Siparişe Çeviren Kişi'] ?? 'admin'}\nSiparişe Çevrilme Tarihi: ${product['Sipariş Tarihi']}\nSipariş Numarası: ${product['Sipariş Numarası']}'),
+                                              'Ürünü Kim Aldı: ${product['whoTook']}\nTeslim Alan: ${product['recipient']}\nİletişim Kişisi: ${product['contactPerson']}\nSipariş Şekli: ${product['orderMethod']}'),
                                           actions: [
                                             TextButton(
                                               onPressed: () {
@@ -1149,6 +1148,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                     );
                                   },
                                 ),
+                              Text(product['Kodu']?.toString() ?? ''),
                             ],
                           ),
                         ),
@@ -1174,31 +1174,35 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   },
                                 ),
                               )
-                                  : Text(product['Adet']?.toString() ?? ''),
-                              if (product['Adet Açıklaması'] != null)
-                                IconButton(
-                                  icon: Icon(Icons.info, color: Colors.blue),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return AlertDialog(
-                                          title: Text('Adet Değişikliği Bilgisi'),
-                                          content: Text(
-                                              'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.of(context).pop();
-                                              },
-                                              child: Text('Tamam'),
-                                            ),
-                                          ],
+                                  : Row(
+                                children: [
+                                  Text(product['Adet']?.toString() ?? ''),
+                                  if (product['Adet Açıklaması'] != null)
+                                    IconButton(
+                                      icon: Icon(Icons.info, color: Colors.blue),
+                                      onPressed: () {
+                                        showDialog(
+                                          context: context,
+                                          builder: (BuildContext context) {
+                                            return AlertDialog(
+                                              title: Text('Adet Değişikliği Bilgisi'),
+                                              content: Text(
+                                                  'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.of(context).pop();
+                                                  },
+                                                  child: Text('Tamam'),
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         );
                                       },
-                                    );
-                                  },
-                                ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),
@@ -1223,31 +1227,35 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                                   },
                                 ),
                               )
-                                  : Text(product['Adet Fiyatı']?.toString() ?? ''),
-                              if (product['Fiyat Açıklaması'] != null)
-                                IconButton(
-                                  icon: Icon(Icons.info, color: Colors.blue),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return AlertDialog(
-                                          title: Text('Fiyat Değişikliği Bilgisi'),
-                                          content: Text(
-                                              'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.of(context).pop();
-                                              },
-                                              child: Text('Tamam'),
-                                            ),
-                                          ],
+                                  : Row(
+                                children: [
+                                  Text(product['Adet Fiyatı']?.toString() ?? ''),
+                                  if (product['Fiyat Açıklaması'] != null)
+                                    IconButton(
+                                      icon: Icon(Icons.info, color: Colors.blue),
+                                      onPressed: () {
+                                        showDialog(
+                                          context: context,
+                                          builder: (BuildContext context) {
+                                            return AlertDialog(
+                                              title: Text('Fiyat Değişikliği Bilgisi'),
+                                              content: Text(
+                                                  'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.of(context).pop();
+                                                  },
+                                                  child: Text('Tamam'),
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         );
                                       },
-                                    );
-                                  },
-                                ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                         ),

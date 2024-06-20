@@ -32,7 +32,6 @@ class _ScanScreenState extends State<ScanScreen> {
   String euroKur = "";
   String currentDate = DateFormat('d MMMM y', 'tr_TR').format(DateTime.now()); // Tarih formatı ayarlandı.
 
-
   List<Map<String, dynamic>> scannedProducts = [];
   List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
   final FirestoreService firestoreService = FirestoreService();
@@ -320,21 +319,31 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
-  Future<void> saveToCustomerDetails() async {
+  Future<void> saveToCustomerDetails(String whoTook, String? recipient, String? contactPerson, String orderMethod) async {
     if (selectedCustomer == null) return;
 
     var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
     var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
+    var processedProducts = scannedProducts.map((product) {
+      return {
+        ...product,
+        'whoTook': whoTook,
+        'recipient': recipient,
+        'contactPerson': contactPerson,
+        'orderMethod': orderMethod,
+      };
+    }).toList();
+
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
       await docRef.update({
-        'products': FieldValue.arrayUnion(scannedProducts),
+        'products': FieldValue.arrayUnion(processedProducts),
       });
     } else {
       await customerCollection.add({
         'customerName': selectedCustomer,
-        'products': scannedProducts,
+        'products': processedProducts,
       });
     }
 
@@ -348,6 +357,162 @@ class _ScanScreenState extends State<ScanScreen> {
       MaterialPageRoute(
         builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
       ),
+    );
+  }
+
+  Future<void> showProcessingDialog() async {
+    String? whoTook;
+    String? recipient;
+    String? contactPerson;
+    String? orderMethod;
+    TextEditingController recipientController = TextEditingController();
+    TextEditingController contactPersonController = TextEditingController();
+    TextEditingController otherMethodController = TextEditingController();
+
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Sipariş Bilgileri'),
+              content: SingleChildScrollView(
+                child: ListBody(
+                  children: <Widget>[
+                    Text('Ürünü Kim Aldı:'),
+                    RadioListTile<String>(
+                      title: Text('Müşterisi'),
+                      value: 'Müşterisi',
+                      groupValue: whoTook,
+                      onChanged: (value) {
+                        setState(() {
+                          whoTook = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: Text('Kendi Firması'),
+                      value: 'Kendi Firması',
+                      groupValue: whoTook,
+                      onChanged: (value) {
+                        setState(() {
+                          whoTook = value;
+                        });
+                      },
+                    ),
+                    if (whoTook == 'Müşterisi')
+                      Column(
+                        children: [
+                          TextField(
+                            decoration: InputDecoration(labelText: 'Müşteri İsmi'),
+                            controller: recipientController,
+                          ),
+                          TextField(
+                            decoration: InputDecoration(labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
+                            controller: contactPersonController,
+                          ),
+                        ],
+                      ),
+                    if (whoTook == 'Kendi Firması')
+                      TextField(
+                        decoration: InputDecoration(labelText: 'Teslim Alan Çalışan İsmi'),
+                        controller: recipientController,
+                      ),
+                    SizedBox(height: 20),
+                    Text('Sipariş Şekli:'),
+                    RadioListTile<String>(
+                      title: Text('Mail'),
+                      value: 'Mail',
+                      groupValue: orderMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          orderMethod = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: Text('Whatsapp'),
+                      value: 'Whatsapp',
+                      groupValue: orderMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          orderMethod = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: Text('Telefon'),
+                      value: 'Telefon',
+                      groupValue: orderMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          orderMethod = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: Text('Dükkanda Sipariş'),
+                      value: 'Dükkanda Sipariş',
+                      groupValue: orderMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          orderMethod = value;
+                        });
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: Text('Diğer'),
+                      value: 'Diğer',
+                      groupValue: orderMethod,
+                      onChanged: (value) {
+                        setState(() {
+                          orderMethod = value;
+                        });
+                      },
+                    ),
+                    if (orderMethod == 'Diğer')
+                      TextField(
+                        controller: otherMethodController,
+                        decoration: InputDecoration(labelText: 'Sipariş Şekli (Diğer)'),
+                      ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('İptal'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                TextButton(
+                  child: Text('Kaydet'),
+                  onPressed: () {
+                    if (whoTook != null &&
+                        recipientController.text.isNotEmpty &&
+                        contactPersonController.text.isNotEmpty &&
+                        orderMethod != null &&
+                        (orderMethod != 'Diğer' || otherMethodController.text.isNotEmpty)) {
+                      saveToCustomerDetails(
+                        whoTook!,
+                        recipientController.text,
+                        contactPersonController.text,
+                        orderMethod == 'Diğer' ? otherMethodController.text : orderMethod!,
+                      );
+                      Navigator.of(context).pop();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Lütfen tüm alanları doldurun')),
+                      );
+                    }
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -699,7 +864,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   child: Text('Teklif Ver'),
                 ),
                 ElevatedButton(
-                  onPressed: saveToCustomerDetails, // Hesaba işle fonksiyonunu burada tanımladık
+                  onPressed: showProcessingDialog, // Hesaba işle fonksiyonunu burada tanımladık
                   child: Text('Hesaba İşle'),
                 ),
               ],
