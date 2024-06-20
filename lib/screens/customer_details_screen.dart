@@ -11,7 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:open_file/open_file.dart';
 import 'pdf_template.dart';
-import 'processed_screen.dart'; // Yeni widget dosyasını içe aktarıyoruz.
+import 'processed_screen.dart'; // İşlenenler widgetını ekliyoruz.
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -954,7 +954,59 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
       },
     );
   }
+  void showProcessDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        TextEditingController processNameController = TextEditingController();
+        return AlertDialog(
+          title: Text('İşlem İsmi Girin'),
+          content: TextField(
+            controller: processNameController,
+            decoration: InputDecoration(hintText: 'İşlem İsmi'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (processNameController.text.isNotEmpty) {
+                  processSelectedProducts(processNameController.text);
+                  Navigator.of(context).pop();
+                }
+              },
+              child: Text('Kaydet'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('İptal'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
+  Future<void> processSelectedProducts(String processName) async {
+    var selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
+    var processedData = {
+      'name': processName,
+      'date': Timestamp.now(),
+      'products': selectedProducts,
+      'customerName': widget.customerName,
+    };
+
+    await FirebaseFirestore.instance.collection('islenenler').add(processedData);
+
+    setState(() {
+      customerProducts.removeWhere((product) => selectedIndexes.contains(customerProducts.indexOf(product)));
+      selectedIndexes.clear();
+      showRadioButtons = false;
+    });
+
+    saveEditsToDatabase(0);
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -964,17 +1016,10 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         children: [
           SizedBox(height: 20),
           ToggleButtons(
-            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2, currentIndex == 3],
+            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2, currentIndex == 3], // Yeni butonu ekliyoruz
             onPressed: (int index) {
               setState(() {
-                if (index == 3) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => ProcessedScreen(customerName: widget.customerName)),
-                  );
-                } else {
-                  currentIndex = index;
-                }
+                currentIndex = index;
               });
             },
             children: [
@@ -990,7 +1035,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text('Teklifler'),
               ),
-              Padding(
+              Padding( // Yeni buton
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text('İşlenenler'),
               ),
@@ -1012,6 +1057,11 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                     },
                   ),
                   Text('Ürünleri Seç'),
+                  if (showRadioButtons)
+                    ElevatedButton(
+                      onPressed: showProcessDialog,
+                      child: Text('İşle'),
+                    ),
                 ],
               ),
             ),
@@ -1439,6 +1489,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 },
               ),
             ),
+          if (currentIndex == 3) Expanded(child: ProcessedWidget(customerName: widget.customerName)),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
