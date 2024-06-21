@@ -344,6 +344,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
         'subKits': [],
         'products': [],
       });
+      tempProducts = List.from(selectedIndexes.map((index) => customerProducts[index]));
       selectedIndexes.clear();
       showRadioButtons = false;
     });
@@ -353,16 +354,15 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     setState(() {
       mainKits[kitIndex]['subKits'].add({
         'name': subKitName,
-        'products': List.from(selectedIndexes.map((index) {
-          debugPrint('Eklenecek Ürün: ${customerProducts[index]}');
+        'products': List.from(tempProducts.map((product) {
           return {
-            'Detay': customerProducts[index]['Detay'],
-            'Kodu': customerProducts[index]['Kodu'],
-            'Adet': customerProducts[index]['Adet'],
+            'Detay': product['Detay'],
+            'Kodu': product['Kodu'],
+            'Adet': product['Adet'],
           };
         })),
       });
-      selectedIndexes.clear();
+      tempProducts.clear();
     });
     saveKitsToFirestore();
   }
@@ -597,37 +597,57 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
   void showProcessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        TextEditingController processNameController = TextEditingController();
-        return AlertDialog(
-          title: Text('İşlem İsmi Girin'),
-          content: TextField(
-            controller: processNameController,
-            decoration: InputDecoration(hintText: 'İşlem İsmi'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                if (processNameController.text.isNotEmpty) {
-                  processSelectedProducts(processNameController.text);
+    if (selectedIndexes.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Uyarı'),
+            content: Text('Lütfen ürün seçin.'),
+            actions: [
+              TextButton(
+                onPressed: () {
                   Navigator.of(context).pop();
-                }
-              },
-              child: Text('Kaydet'),
+                },
+                child: Text('Tamam'),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          TextEditingController processNameController = TextEditingController();
+          return AlertDialog(
+            title: Text('İşlem İsmi Girin'),
+            content: TextField(
+              controller: processNameController,
+              decoration: InputDecoration(hintText: 'İşlem İsmi'),
             ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('İptal'),
-            ),
-          ],
-        );
-      },
-    );
+            actions: [
+              TextButton(
+                onPressed: () {
+                  if (processNameController.text.isNotEmpty) {
+                    processSelectedProducts(processNameController.text);
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: Text('Kaydet'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: Text('İptal'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   Future<void> processSelectedProducts(String processName) async {
@@ -674,6 +694,15 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                 ElevatedButton(
                   onPressed: showProcessDialog,
                   child: Text('İşle'),
+                ),
+              if (showRadioButtons)
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      selectedIndexes.addAll(List.generate(customerProducts.length, (index) => index));
+                    });
+                  },
+                  child: Text('Hepsini Seç'),
                 ),
             ],
           ),
