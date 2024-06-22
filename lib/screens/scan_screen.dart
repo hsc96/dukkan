@@ -338,8 +338,15 @@ class _ScanScreenState extends State<ScanScreen> {
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
+      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
+
+      // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
+      for (var product in processedProducts) {
+        existingProducts.add(product);
+      }
+
       await docRef.update({
-        'products': FieldValue.arrayUnion(processedProducts),
+        'products': existingProducts,
       });
     } else {
       await customerCollection.add({
@@ -360,6 +367,7 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+
 
 
   Future<void> showProcessingDialog() async {
