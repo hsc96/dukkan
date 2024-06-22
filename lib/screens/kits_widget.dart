@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
-import 'package:intl/intl.dart'; // Tarih formatı için
+import 'package:intl/intl.dart';
 import 'dovizservice.dart';
 import 'firestore_service.dart';
 
@@ -237,6 +237,7 @@ class _KitsWidgetState extends State<KitsWidget> {
           'Adet': '1',
         });
       });
+      print('Product added to main kit: ${product['Kodu']}');
     } else {
       dialogSetState!(() {
         tempProducts.add({
@@ -245,6 +246,7 @@ class _KitsWidgetState extends State<KitsWidget> {
           'Adet': '1',
         });
       });
+      print('Product added to sub kit: ${product['Kodu']}');
     }
     saveKitsToFirestore();
   }
@@ -277,14 +279,13 @@ class _KitsWidgetState extends State<KitsWidget> {
   Future<void> applyDiscountToProduct(Map<String, dynamic> productData, String brand, String discountLevel) async {
     double priceInTl = 0.0;
     double price = 0.00;
-    // Fiyatı doğru şekilde çekmek için string ve numara kontrolü
     if (productData['Fiyat'] is String) {
       price = double.tryParse(productData['Fiyat']) ?? 0.0;
     } else if (productData['Fiyat'] is num) {
       price = productData['Fiyat'].toDouble();
     }
 
-    print('Price: $price, Currency: ${productData['Doviz']}'); // Hata ayıklama için
+    print('Price: $price, Currency: ${productData['Doviz']}');
 
     String currency = productData['Doviz']?.toString() ?? '';
 
@@ -293,12 +294,12 @@ class _KitsWidgetState extends State<KitsWidget> {
     } else if (currency == 'Dolar') {
       priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
     } else {
-      priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
+      priceInTl = price;
     }
 
     productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
 
-    print('Price in TL: $priceInTl'); // Hata ayıklama için
+    print('Price in TL: $priceInTl');
 
     if (discountLevel.isNotEmpty) {
       var discountData = await firestoreService.getDiscountRates(discountLevel, brand);
@@ -330,7 +331,6 @@ class _KitsWidgetState extends State<KitsWidget> {
 
     var productsCollection = FirebaseFirestore.instance.collection('urunler');
 
-    // Müşterinin iskonto seviyesini güncel olarak al
     var customerDiscount = await firestoreService.getCustomerDiscount(widget.customerName);
     String discountLevel = customerDiscount['iskonto'] ?? '';
 
@@ -341,36 +341,26 @@ class _KitsWidgetState extends State<KitsWidget> {
       if (productQuerySnapshot.docs.isNotEmpty) {
         var productData = productQuerySnapshot.docs.first.data();
 
-        // Log the entire productData to see what it contains
-        print('Product Data: $productData');
-
         double priceInTl = 0.0;
         double price = 0.0;
-        // Fiyatı doğru şekilde çekmek için string ve numara kontrolü
         if (productData['Fiyat'] is String) {
           price = double.tryParse(productData['Fiyat']) ?? 0.0;
         } else if (productData['Fiyat'] is num) {
           price = productData['Fiyat'].toDouble();
         }
 
-        print('Processing Product - Code: ${product['Kodu']}, Price: $price'); // Hata ayıklama için
-
         String currency = productData['Doviz']?.toString() ?? '';
-        print('Currency: $currency'); // Hata ayıklama için
 
         if (currency == 'Euro') {
           priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
         } else if (currency == 'Dolar') {
           priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
         } else {
-          priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
+          priceInTl = price;
         }
-
-        print('Price in TL: $priceInTl'); // Hata ayıklama için
 
         double adet = double.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
 
-        // Apply discount directly to product being processed
         if (discountLevel.isNotEmpty) {
           var discountData = await firestoreService.getDiscountRates(discountLevel, productData['Marka'] ?? '');
           double discountRate = discountData['rate'] ?? 0.0;
@@ -384,15 +374,18 @@ class _KitsWidgetState extends State<KitsWidget> {
           product['İskonto'] = '0%';
         }
 
-        print('Final Product Data: $product'); // Hata ayıklama için
         processedProducts.add(product);
       }
     }
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
+      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
+
+      existingProducts.addAll(processedProducts);
+
       await docRef.update({
-        'products': FieldValue.arrayUnion(processedProducts),
+        'products': existingProducts,
       });
     } else {
       await customerCollection.add({
@@ -405,6 +398,8 @@ class _KitsWidgetState extends State<KitsWidget> {
       SnackBar(content: Text('Ürünler başarıyla işlendi')),
     );
   }
+
+
 
   Widget buildKitsList() {
     return ListView.builder(
@@ -465,6 +460,6 @@ class _KitsWidgetState extends State<KitsWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(child: buildKitsList());
+    return buildKitsList();
   }
 }
