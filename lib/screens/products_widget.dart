@@ -27,6 +27,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   int? currentEditingSubKitIndex;
   List<Map<String, dynamic>> tempProducts = [];
   List<Map<String, dynamic>> originalProducts = [];
+  bool showInfoButtons = false;
 
   @override
   void initState() {
@@ -291,25 +292,27 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
-
   void addProductToKit(Map<String, dynamic> product, int kitIndex, {int? subKitIndex}) {
+    var currentDate = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
+
     setState(() {
+      var newProduct = {
+        'Detay': product['Detay'] ?? '',
+        'Kodu': product['Kodu'] ?? '',
+        'Adet': '1',
+        'siparisTarihi': currentDate,  // Eklendiği andaki tarih ve saat bilgisi
+      };
+
       if (subKitIndex == null) {
-        mainKits[kitIndex]['products'].add({
-          'Detay': product['Detay'] ?? '',
-          'Kodu': product['Kodu'] ?? '',
-          'Adet': '1',
-        });
+        mainKits[kitIndex]['products'].add(newProduct);
       } else {
-        mainKits[kitIndex]['subKits'][subKitIndex]['products'].add({
-          'Detay': product['Detay'] ?? '',
-          'Kodu': product['Kodu'] ?? '',
-          'Adet': '1',
-        });
+        mainKits[kitIndex]['subKits'][subKitIndex]['products'].add(newProduct);
       }
     });
     saveKitsToFirestore();
   }
+
+
 
   Future<void> saveKitsToFirestore() async {
     var kitlerCollection = FirebaseFirestore.instance.collection('kitler');
@@ -468,7 +471,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
             TextButton(
               onPressed: () {
                 if (subKitNameController.text.isNotEmpty) {
-                  debugPrint('Alt Kit İsmi Girildi: ${subKitNameController.text}');
                   createNewSubKitForAssignment(kitIndex, subKitNameController.text);
                   Navigator.of(context).pop();
                 }
@@ -486,7 +488,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       mainKits[kitIndex]['subKits'].add({
         'name': subKitName,
         'products': List.from(selectedIndexes.map((index) {
-          debugPrint('Eklenecek Ürün: ${customerProducts[index]}');
           return {
             'Detay': customerProducts[index]['Detay'],
             'Kodu': customerProducts[index]['Kodu'],
@@ -670,6 +671,131 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     saveEditsToDatabase(0);
   }
 
+  Widget buildInfoButton(Map<String, dynamic> product) {
+    bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A';
+    bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
+    bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
+
+    if (!showInfoButtons || (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo)) {
+      return Container();
+    }
+
+    return Column(
+      children: [
+        if (hasQuoteInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForQuote(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: Text('Teklif'),
+          ),
+        SizedBox(width: 5),
+        if (hasKitInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForKit(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: Text('Kit'),
+          ),
+        SizedBox(width: 5),
+        if (hasSalesInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForSales(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
+            child: Text('Satış'),
+          ),
+      ],
+    );
+  }
+
+  void showInfoDialogForQuote(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Onaylanan Ürün Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
+              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showInfoDialogForKit(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Kit Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ana Kit Adı: ${product['Ana Kit Adı'] ?? 'N/A'}'),
+              Text('Alt Kit Adı: ${product['Alt Kit Adı'] ?? 'N/A'}'),
+              Text('Oluşturan Kişi: ${product['Oluşturan Kişi'] ?? 'Admin'}'),
+              Text('Siparişe Dönüştürme Tarihi: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+
+  void showInfoDialogForSales(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Satış Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ürünü Kim Aldı: ${product['whoTook'] ?? 'N/A'}'),
+              if (product['whoTook'] == 'Müşterisi') ...[
+                Text('Müşteri İsmi: ${product['recipient'] ?? 'N/A'}'),
+                Text('Firmadan Bilgilendirilecek Kişi İsmi: ${product['contactPerson'] ?? 'N/A'}'),
+              ],
+              if (product['whoTook'] == 'Kendi Firması')
+                Text('Teslim Alan Çalışan İsmi: ${product['recipient'] ?? 'N/A'}'),
+              Text('Sipariş Şekli: ${product['orderMethod'] ?? 'N/A'}'),
+              Text('Tarih: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -724,6 +850,22 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               ],
             ),
           ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    showInfoButtons = !showInfoButtons;
+                  });
+                },
+                child: Text(showInfoButtons ? 'Bilgileri Gizle' : 'Bilgileri Göster +'),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: SingleChildScrollView(
             scrollDirection: Axis.vertical,
@@ -739,6 +881,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                   DataColumn(label: Text('İskonto')),
                   DataColumn(label: Text('Toplam Fiyat')),
                   DataColumn(label: Text('Düzenle')),
+                  DataColumn(label: Text('Bilgi')),
                 ],
                 rows: customerProducts.map((product) {
                   int index = customerProducts.indexOf(product);
@@ -930,27 +1073,11 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                         ],
                       ),
                     ),
+                    DataCell(
+                      buildInfoButton(product),
+                    ),
                   ]);
-                }).toList()
-                  ..add(
-                    DataRow(cells: [
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(
-                        showRadioButtons
-                            ? ElevatedButton(
-                          onPressed: showKitCreationDialog,
-                          child: Text('Kit Oluştur'),
-                        )
-                            : Container(),
-                      ),
-                    ]),
-                  ),
+                }).toList(),
               ),
             ),
           ),

@@ -13,8 +13,6 @@ class ProcessedWidget extends StatefulWidget {
 
 class _ProcessedWidgetState extends State<ProcessedWidget> {
   List<Map<String, dynamic>> processedItems = [];
-  Set<int> selectedProcessedIndexes = {};
-  int? selectedProcessedIndex;
 
   @override
   void initState() {
@@ -41,18 +39,6 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
     });
   }
 
-  void toggleSelectAllProcessed(int processedIndex) {
-    setState(() {
-      var processedProducts = processedItems[processedIndex]['products'] as List<Map<String, dynamic>>;
-      if (selectedProcessedIndexes.length == processedProducts.length && selectedProcessedIndex == processedIndex) {
-        selectedProcessedIndexes.clear();
-      } else {
-        selectedProcessedIndexes = Set<int>.from(Iterable<int>.generate(processedProducts.length));
-        selectedProcessedIndex = processedIndex;
-      }
-    });
-  }
-
   double calculateTotal(List<Map<String, dynamic>> products) {
     return products.fold(0.0, (sum, product) {
       if (product['Toplam Fiyat'] != null) {
@@ -68,6 +54,129 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
 
   double calculateGrandTotal(double total, double vat) {
     return total + vat;
+  }
+
+  void showInfoDialogForQuote(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Onaylanan Ürün Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
+              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showInfoDialogForKit(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Kit Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ana Kit Adı: ${product['Ana Kit Adı'] ?? 'N/A'}'),
+              Text('Alt Kit Adı: ${product['Alt Kit Adı'] ?? 'N/A'}'),
+              Text('Oluşturan Kişi: ${product['Oluşturan Kişi'] ?? 'Admin'}'),
+              Text('Siparişe Dönüştürme Tarihi: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void showInfoDialogForSales(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Satış Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ürünü Kim Aldı: ${product['whoTook'] ?? 'N/A'}'),
+              if (product['whoTook'] == 'Müşterisi') ...[
+                Text('Müşteri İsmi: ${product['recipient'] ?? 'N/A'}'),
+                Text('Firmadan Bilgilendirilecek Kişi İsmi: ${product['contactPerson'] ?? 'N/A'}'),
+              ],
+              if (product['whoTook'] == 'Kendi Firması')
+                Text('Teslim Alan Çalışan İsmi: ${product['recipient'] ?? 'N/A'}'),
+              Text('Sipariş Şekli: ${product['orderMethod'] ?? 'N/A'}'),
+              Text('Tarih: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget buildInfoButton(Map<String, dynamic> product) {
+    bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A';
+    bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
+    bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
+
+    if (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo) {
+      return Container();
+    }
+
+    return Column(
+      children: [
+        if (hasQuoteInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForQuote(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: Text('Teklif'),
+          ),
+        SizedBox(width: 5),
+        if (hasKitInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForKit(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: Text('Kit'),
+          ),
+        SizedBox(width: 5),
+        if (hasSalesInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForSales(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
+            child: Text('Satış'),
+          ),
+      ],
+    );
   }
 
   @override
@@ -88,42 +197,16 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columns: [
-                  DataColumn(label: Text('')),
                   DataColumn(label: Text('Kodu')),
                   DataColumn(label: Text('Detay')),
                   DataColumn(label: Text('Adet')),
                   DataColumn(label: Text('Adet Fiyatı')),
                   DataColumn(label: Text('İskonto')),
                   DataColumn(label: Text('Toplam Fiyat')),
-                  DataColumn(label: Text('Teklif Bilgisi')), // Teklif Bilgisi Kolonu
+                  DataColumn(label: Text('Bilgi')),
                 ],
                 rows: products.map((product) {
-                  int productIndex = products.indexOf(product);
-                  bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
-                      product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-                      product['Adet Fiyatı']?.toString() == 'Genel Toplam';
-
                   return DataRow(cells: [
-                    DataCell(
-                      !isTotalRow
-                          ? Checkbox(
-                        value: selectedProcessedIndexes.contains(productIndex) && selectedProcessedIndex == index,
-                        onChanged: (bool? value) {
-                          setState(() {
-                            if (value == true) {
-                              selectedProcessedIndexes.add(productIndex);
-                              selectedProcessedIndex = index;
-                            } else {
-                              selectedProcessedIndexes.remove(productIndex);
-                              if (selectedProcessedIndexes.isEmpty) {
-                                selectedProcessedIndex = null;
-                              }
-                            }
-                          });
-                        },
-                      )
-                          : Container(),
-                    ),
                     DataCell(Text(product['Kodu']?.toString() ?? '')),
                     DataCell(Text(product['Detay']?.toString() ?? '')),
                     DataCell(
@@ -190,33 +273,7 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                     ),
                     DataCell(Text(product['İskonto']?.toString() ?? '')),
                     DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
-                    DataCell(
-                      product['Teklif Numarası'] != null
-                          ? IconButton(
-                        icon: Icon(Icons.info, color: Colors.blue),
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return AlertDialog(
-                                title: Text('Teklif Bilgisi'),
-                                content: Text(
-                                    'Teklif Numarası: ${product['Teklif Numarası']}\nSiparişe Çeviren Kişi: ${product['Siparişe Çeviren Kişi'] ?? 'admin'}\nSiparişe Çevrilme Tarihi: ${product['Sipariş Tarihi']}\nSipariş Numarası: ${product['Sipariş Numarası']}'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text('Tamam'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      )
-                          : Container(),
-                    ),
+                    DataCell(buildInfoButton(product)),
                   ]);
                 }).toList()
                   ..addAll([
@@ -226,7 +283,6 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                       DataCell(Container()),
                       DataCell(Container()),
                       DataCell(Text('Toplam Tutar')),
-                      DataCell(Container()),
                       DataCell(Text(total.toStringAsFixed(2))),
                       DataCell(Container()),
                     ]),
@@ -236,7 +292,6 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                       DataCell(Container()),
                       DataCell(Container()),
                       DataCell(Text('KDV %20')),
-                      DataCell(Container()),
                       DataCell(Text(vat.toStringAsFixed(2))),
                       DataCell(Container()),
                     ]),
@@ -246,22 +301,11 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                       DataCell(Container()),
                       DataCell(Container()),
                       DataCell(Text('Genel Toplam')),
-                      DataCell(Container()),
                       DataCell(Text(grandTotal.toStringAsFixed(2))),
                       DataCell(Container()),
                     ]),
                   ]),
               ),
-            ),
-            Row(
-              children: [
-                TextButton(
-                  onPressed: () {
-                    toggleSelectAllProcessed(index);
-                  },
-                  child: Text('Hepsini Seç'),
-                ),
-              ],
             ),
           ],
         );

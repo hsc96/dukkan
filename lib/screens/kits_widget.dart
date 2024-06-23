@@ -320,10 +320,18 @@ class _KitsWidgetState extends State<KitsWidget> {
     if (subKitIndex == null) {
       productsToProcess = List.from(mainKits[kitIndex]['products']);
       for (var subKit in mainKits[kitIndex]['subKits']) {
-        productsToProcess.addAll(List.from(subKit['products']));
+        for (var product in subKit['products']) {
+          product['Ana Kit Adı'] = mainKits[kitIndex]['name'];
+          product['Alt Kit Adı'] = subKit['name'];
+          productsToProcess.add(product);
+        }
       }
     } else {
       productsToProcess = List.from(mainKits[kitIndex]['subKits'][subKitIndex]['products']);
+      for (var product in productsToProcess) {
+        product['Ana Kit Adı'] = mainKits[kitIndex]['name'];
+        product['Alt Kit Adı'] = mainKits[kitIndex]['subKits'][subKitIndex]['name'];
+      }
     }
 
     var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
@@ -398,6 +406,8 @@ class _KitsWidgetState extends State<KitsWidget> {
       SnackBar(content: Text('Ürünler başarıyla işlendi')),
     );
   }
+
+
 
 
 
