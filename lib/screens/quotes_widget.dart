@@ -541,7 +541,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
           children: updatedProducts.map((product) {
             int productIndex = updatedProducts.indexOf(product);
             DateTime? deliveryDate = product['Teslim Tarihi'] != null
-                ? (product['Teslim Tarihi'] as Timestamp).toDate()
+                ? (product['Teslim Tarihi'] as Timestamp?)?.toDate()
                 : null;
 
             return ListTile(
@@ -597,6 +597,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
         TextButton(
           onPressed: () {
             widget.onSave(updatedProducts);
+            Navigator.of(context).pop(); // Dialog'u kapatma
           },
           child: Text('Kaydet'),
         ),
