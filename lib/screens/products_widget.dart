@@ -293,14 +293,14 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     );
   }
   void addProductToKit(Map<String, dynamic> product, int kitIndex, {int? subKitIndex}) {
-    var currentDate = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
+    var currentDate = DateTime.now().toIso8601String(); // Tarihi ISO formatında kaydediyoruz
 
     setState(() {
       var newProduct = {
         'Detay': product['Detay'] ?? '',
         'Kodu': product['Kodu'] ?? '',
         'Adet': '1',
-        'siparisTarihi': currentDate,  // Eklendiği andaki tarih ve saat bilgisi
+        'siparisTarihi': currentDate, // Eklendiği andaki tarih ve saat bilgisi
       };
 
       if (subKitIndex == null) {
@@ -311,6 +311,12 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     });
     saveKitsToFirestore();
   }
+
+
+
+
+
+
 
 
 
@@ -338,6 +344,8 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       }
     }
   }
+
+
 
   void createNewMainKit(String kitName) {
     setState(() {
@@ -734,6 +742,11 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
   void showInfoDialogForKit(Map<String, dynamic> product) {
+    DateTime? siparisTarihi;
+    if (product['siparisTarihi'] != null) {
+      siparisTarihi = DateTime.parse(product['siparisTarihi']);
+    }
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -745,7 +758,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               Text('Ana Kit Adı: ${product['Ana Kit Adı'] ?? 'N/A'}'),
               Text('Alt Kit Adı: ${product['Alt Kit Adı'] ?? 'N/A'}'),
               Text('Oluşturan Kişi: ${product['Oluşturan Kişi'] ?? 'Admin'}'),
-              Text('Siparişe Dönüştürme Tarihi: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+              Text('Siparişe Dönüştürme Tarihi: ${siparisTarihi != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(siparisTarihi) : siparisTarihi}'),
             ],
           ),
           actions: [
@@ -760,6 +773,13 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
+
+
+
+
+
+
+
 
 
 

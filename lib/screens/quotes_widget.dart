@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'pdf_template.dart';  // Bu satırı ekliyoruz.
+import 'pdf_template.dart'; // Bu satırı ekliyoruz.
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
@@ -238,42 +238,57 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   }
 
   void finalizeOrderConversion(int quoteIndex, String? orderNumber) async {
-    List<Map<String, dynamic>> customerProducts = [];
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return DeliveryDateForm(
+          quoteProducts: quotes[quoteIndex]['products'],
+          onSave: (updatedProducts) async {
+            List<Map<String, dynamic>> customerProducts = [];
+            List<Map<String, dynamic>> pendingProducts = [];
 
-    var customerQuerySnapshot = await FirebaseFirestore.instance
-        .collection('customerDetails')
-        .where('customerName', isEqualTo: widget.customerName)
-        .get();
+            var customerQuerySnapshot = await FirebaseFirestore.instance
+                .collection('customerDetails')
+                .where('customerName', isEqualTo: widget.customerName)
+                .get();
 
-    if (customerQuerySnapshot.docs.isNotEmpty) {
-      var customerDoc = customerQuerySnapshot.docs.first;
-      customerProducts = List<Map<String, dynamic>>.from(customerDoc.data()['products'] ?? []);
-    }
+            if (customerQuerySnapshot.docs.isNotEmpty) {
+              var customerDoc = customerQuerySnapshot.docs.first;
+              customerProducts = List<Map<String, dynamic>>.from(customerDoc.data()['products'] ?? []);
+            }
 
-    setState(() {
-      var quoteProducts = quotes[quoteIndex]['products'] as List<Map<String, dynamic>>;
-      for (var product in quoteProducts) {
-        if (product['Kodu']?.toString() != '') {
-          var productCopy = Map<String, dynamic>.from(product);
-          productCopy['Teklif Numarası'] = quotes[quoteIndex]['quoteNumber'];
-          productCopy['Sipariş Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
-          productCopy['Sipariş Numarası'] = orderNumber ?? 'Sipariş Numarası Girilmedi';
-          customerProducts.add(productCopy);
-        }
-      }
-      updateTotalAndVat();
-      saveEditsToDatabase(quoteIndex);
-      selectedQuoteIndexes.clear();
-    });
+            for (var product in updatedProducts) {
+              var productCopy = Map<String, dynamic>.from(product);
+              productCopy['Teklif Numarası'] = quotes[quoteIndex]['quoteNumber'];
+              productCopy['Sipariş Numarası'] = orderNumber ?? 'Sipariş Numarası Girilmedi';
+              productCopy['Sipariş Tarihi'] = Timestamp.now();
 
-    await FirebaseFirestore.instance.collection('customerDetails').doc(customerQuerySnapshot.docs.first.id).update({
-      'products': customerProducts,
-    });
+              if (product['isStock'] == true) {
+                customerProducts.add(productCopy);
+              } else {
+                pendingProducts.add(productCopy);
+              }
+            }
 
-    setState(() {
-      selectedQuoteIndexes.clear();
-      selectedQuoteIndex = null;
-    });
+            await FirebaseFirestore.instance.collection('customerDetails').doc(customerQuerySnapshot.docs.first.id).update({
+              'products': customerProducts,
+            });
+
+            for (var pendingProduct in pendingProducts) {
+              await FirebaseFirestore.instance.collection('pendingProducts').add(pendingProduct);
+            }
+
+            setState(() {
+              selectedQuoteIndexes.clear();
+              selectedQuoteIndex = null;
+            });
+
+            Navigator.of(context).pop();
+          },
+        );
+      },
+    );
   }
 
   void toggleSelectAllProducts(int quoteIndex) {
@@ -494,6 +509,98 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           ],
         );
       },
+    );
+  }
+}
+
+class DeliveryDateForm extends StatefulWidget {
+  final List<Map<String, dynamic>> quoteProducts;
+  final Function(List<Map<String, dynamic>>) onSave;
+
+  DeliveryDateForm({required this.quoteProducts, required this.onSave});
+
+  @override
+  _DeliveryDateFormState createState() => _DeliveryDateFormState();
+}
+
+class _DeliveryDateFormState extends State<DeliveryDateForm> {
+  List<Map<String, dynamic>> updatedProducts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    updatedProducts = List<Map<String, dynamic>>.from(widget.quoteProducts);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Teslim Tarihi Seçin'),
+      content: SingleChildScrollView(
+        child: Column(
+          children: updatedProducts.map((product) {
+            int productIndex = updatedProducts.indexOf(product);
+            DateTime? deliveryDate = product['Teslim Tarihi'] != null
+                ? (product['Teslim Tarihi'] as Timestamp).toDate()
+                : null;
+
+            return ListTile(
+              title: Text(product['Detay']),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: deliveryDate ?? DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime(2100),
+                          );
+
+                          if (pickedDate != null) {
+                            setState(() {
+                              updatedProducts[productIndex]['Teslim Tarihi'] = Timestamp.fromDate(pickedDate);
+                            });
+                          }
+                        },
+                        child: Text(
+                          deliveryDate != null
+                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'
+                              : 'Teslim Tarihi Seçin',
+                        ),
+                      ),
+                      Checkbox(
+                        value: product['isStock'] ?? false,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            updatedProducts[productIndex]['isStock'] = value;
+                          });
+                        },
+                      ),
+                      Text('Bu ürün stokta mı?'),
+                    ],
+                  ),
+                  if (product['isStock'] == true)
+                    Text('Bu ürün stokta mevcut.')
+                  else if (deliveryDate != null)
+                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            widget.onSave(updatedProducts);
+          },
+          child: Text('Kaydet'),
+        ),
+      ],
     );
   }
 }
