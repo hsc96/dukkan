@@ -21,7 +21,7 @@ class QuoteScreen extends StatelessWidget {
               DataColumn(label: Text('Kodu')),
               DataColumn(label: Text('Detay')),
               DataColumn(label: Text('Adet')),
-              DataColumn(label: Text('Adet Fiyatı')),
+              DataColumn(label: Text('Adet Fiyatiı')),
               DataColumn(label: Text('İskonto')),
               DataColumn(label: Text('Toplam Fiyat')),
             ],

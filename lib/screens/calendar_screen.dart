@@ -30,19 +30,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events.clear();
       for (var doc in querySnapshot.docs) {
         var data = doc.data();
-        print('Fetched data: $data'); // Debug print
-
-        try {
-          DateTime deliveryDate = (data['Teslim Tarihi'] as Timestamp).toDate();
-          DateTime deliveryDateOnly = DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
-          if (_events[deliveryDateOnly] == null) {
-            _events[deliveryDateOnly] = [];
-          }
-          _events[deliveryDateOnly]!.add(data);
-          print('Added event for $deliveryDateOnly: $data'); // Debug print
-        } catch (e) {
-          print('Error processing data: $e');
+        DateTime deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
+        DateTime deliveryDateOnly = DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
+        if (_events[deliveryDateOnly] == null) {
+          _events[deliveryDateOnly] = [];
         }
+        _events[deliveryDateOnly]!.add(data);
       }
     });
   }
@@ -96,7 +89,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 _selectedDay = selectedDay;
                 _focusedDay = focusedDay;
               });
-              _showEventsDialog(selectedDay);
             },
             onFormatChanged: (format) {
               if (_calendarFormat != format) {
@@ -162,9 +154,17 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: ListView(
               children: _getEventsForDay(_selectedDay ?? _focusedDay).map((event) {
                 return ListTile(
-                  title: Text(event['Detay']),
-                  subtitle: Text(
-                      'Sipariş No: ${event['Sipariş Numarası']}\nOluşturan: ${event['Oluşturan Kişi']}\nOluşturma Tarihi: ${event['Sipariş Tarihi'] != null ? DateFormat('dd MMMM yyyy').format((event['Sipariş Tarihi'] as Timestamp).toDate()) : 'Tarih bilgisi yok'}'),
+                  title: Text(event['product']['Detay'] ?? 'Detay yok'),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Müşteri: ${event['customerName'] ?? 'Müşteri bilgisi yok'}'),
+                      Text('Sipariş No: ${event['orderNumber'] ?? 'Sipariş numarası yok'}'),
+                      Text('Teklif No: ${event['quoteNumber'] ?? 'Teklif numarası yok'}'),
+                      Text('Oluşturan: ${event['createdBy'] ?? 'admin'}'),
+                      Text('Oluşturma Tarihi: ${event['createdAt'] != null ? DateFormat('dd MMMM yyyy').format((event['createdAt'] as Timestamp).toDate()) : 'Tarih bilgisi yok'}'),
+                    ],
+                  ),
                 );
               }).toList(),
             ),
@@ -172,37 +172,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
-    );
-  }
-
-  void _showEventsDialog(DateTime selectedDay) {
-    List<Map<String, dynamic>> events = _getEventsForDay(selectedDay);
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(DateFormat('dd MMMM yyyy').format(selectedDay)),
-          content: events.isNotEmpty
-              ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: events.map((event) {
-              return ListTile(
-                title: Text(event['Detay']),
-                subtitle: Text(
-                    'Sipariş No: ${event['Sipariş Numarası']}\nOluşturan: ${event['Oluşturan Kişi']}\nOluşturma Tarihi: ${event['Sipariş Tarihi'] != null ? DateFormat('dd MMMM yyyy').format((event['Sipariş Tarihi'] as Timestamp).toDate()) : 'Tarih bilgisi yok'}'),
-              );
-            }).toList(),
-          )
-              : Text('Bu tarihte ürün yok.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Kapat'),
-            ),
-          ],
-        );
-      },
     );
   }
 }
