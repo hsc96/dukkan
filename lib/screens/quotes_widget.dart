@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'pdf_template.dart'; // Bu satırı ekliyoruz.
+import 'package:open_file/open_file.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'package:open_file/open_file.dart';
-import 'delivery_date_form.dart'; // Ekliyoruz
+import 'pdf_service.dart';
+import 'pdf_template.dart';
 
 class QuotesWidget extends StatefulWidget {
   final String customerName;
@@ -18,7 +18,6 @@ class QuotesWidget extends StatefulWidget {
 
 class _QuotesWidgetState extends State<QuotesWidget> {
   List<Map<String, dynamic>> quotes = [];
-  List<Map<String, dynamic>> awaitedProducts = [];
   bool isEditing = false;
   int editingIndex = -1;
   Map<String, dynamic>? originalProductData;
@@ -32,7 +31,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   void initState() {
     super.initState();
     fetchQuotes();
-    fetchAwaitedProducts();
   }
 
   Future<void> fetchQuotes() async {
@@ -51,71 +49,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           'date': (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
         };
       }).toList();
-    });
-  }
-
-  Future<void> fetchAwaitedProducts() async {
-    var querySnapshot = await FirebaseFirestore.instance
-        .collection('pendingProducts')
-        .where('customerName', isEqualTo: widget.customerName)
-        .get();
-
-    setState(() {
-      awaitedProducts = querySnapshot.docs.map((doc) {
-        var data = doc.data();
-        return {
-          'Detay': data['Detay'] ?? '',
-          'Sipariş Numarası': data['orderNumber'] ?? '',
-          'Müşteri': data['customerName'] ?? '',
-          'Teslim Tarihi': (data['deliveryDate'] as Timestamp?)?.toDate() ?? null,
-        };
-      }).toList();
-    });
-  }
-
-  void updateTotalAndVat() {
-    double toplamTutar = 0.0;
-    quotes.forEach((quote) {
-      var products = quote['products'] as List<Map<String, dynamic>>;
-      products.forEach((product) {
-        if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
-          toplamTutar += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
-        }
-      });
-
-      double kdv = toplamTutar * 0.20;
-      double genelToplam = toplamTutar + kdv;
-
-      setState(() {
-        products.removeWhere((product) =>
-        product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
-            product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-            product['Adet Fiyatı']?.toString() == 'Genel Toplam');
-
-        products.add({
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'Toplam Tutar',
-          'Toplam Fiyat': toplamTutar.toStringAsFixed(2),
-        });
-        products.add({
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'KDV %20',
-          'Toplam Fiyat': kdv.toStringAsFixed(2),
-        });
-        products.add({
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'Genel Toplam',
-          'Toplam Fiyat': genelToplam.toStringAsFixed(2),
-        });
-
-        quote['products'] = products;
-      });
     });
   }
 
@@ -180,7 +113,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                       quoteProduct['Eski Fiyat'] = originalProductData?['Adet Fiyatı']?.toString();
                       quoteProduct['Adet Fiyatı'] = priceController.text;
                     }
-                    updateTotalAndVat(); // Toplam ve KDV'yi güncelle
                     saveEditsToDatabase(quoteIndex); // Veritabanına kaydet
                     originalProductData = null;
                   });
@@ -226,6 +158,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     );
   }
 
+
   void showOrderNumberDialog(int quoteIndex) {
     showDialog(
       context: context,
@@ -240,16 +173,32 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                finalizeOrderConversion(quoteIndex, orderNumberController.text);
+              onPressed: () async {
+                DateTime? pickedDate = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (pickedDate != null) {
+                  finalizeOrderConversion(quoteIndex, pickedDate, orderNumberController.text);
+                  Navigator.of(context).pop();
+                }
               },
               child: Text('Kaydet'),
             ),
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                finalizeOrderConversion(quoteIndex, null);
+              onPressed: () async {
+                DateTime? pickedDate = await showDatePicker(
+                  context: context,
+                  initialDate: DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (pickedDate != null) {
+                  finalizeOrderConversion(quoteIndex, pickedDate, null);
+                  Navigator.of(context).pop();
+                }
               },
               child: Text('İptal'),
             ),
@@ -259,59 +208,44 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     );
   }
 
-  void finalizeOrderConversion(int quoteIndex, String? orderNumber) async {
+
+  void finalizeOrderConversion(int quoteIndex, DateTime deliveryDate, String? orderNumber) async {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        return DeliveryDateForm(
-          quoteProducts: quotes[quoteIndex]['products'],
-          onSave: (updatedProducts) async {
-            List<Map<String, dynamic>> customerProducts = [];
-            List<Map<String, dynamic>> pendingProducts = [];
-
-            var customerQuerySnapshot = await FirebaseFirestore.instance
-                .collection('customerDetails')
-                .where('customerName', isEqualTo: widget.customerName)
-                .get();
-
-            if (customerQuerySnapshot.docs.isNotEmpty) {
-              var customerDoc = customerQuerySnapshot.docs.first;
-              customerProducts = List<Map<String, dynamic>>.from(customerDoc.data()['products'] ?? []);
-            }
-
-            for (var product in updatedProducts) {
-              var productCopy = Map<String, dynamic>.from(product);
-              productCopy['Teklif Numarası'] = quotes[quoteIndex]['quoteNumber'];
-              productCopy['Sipariş Numarası'] = orderNumber ?? 'Sipariş Numarası Girilmedi';
-              productCopy['Sipariş Tarihi'] = Timestamp.now();
-
-              if (product['isStock'] == true) {
-                customerProducts.add(productCopy);
-              } else {
-                pendingProducts.add(productCopy);
-              }
-            }
-
-            await FirebaseFirestore.instance.collection('customerDetails').doc(customerQuerySnapshot.docs.first.id).update({
-              'products': customerProducts,
-            });
-
-            for (var pendingProduct in pendingProducts) {
-              await FirebaseFirestore.instance.collection('pendingProducts').add(pendingProduct);
-            }
-
-            setState(() {
-              selectedQuoteIndexes.clear();
-              selectedQuoteIndex = null;
-            });
-
-            Navigator.of(context).pop();
-          },
+        return AlertDialog(
+          title: Text('Siparişe Dönüştürülüyor...'),
+          content: CircularProgressIndicator(),
         );
       },
     );
+
+    List<Map<String, dynamic>> updatedProducts = quotes[quoteIndex]['products'];
+
+    for (var product in updatedProducts) {
+      if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
+        await FirebaseFirestore.instance.collection('pendingProducts').add({
+          'Müşteri Ünvanı': widget.customerName.length > 30 ? widget.customerName.substring(0, 30) : widget.customerName,
+          'Teklif No': quotes[quoteIndex]['quoteNumber'],
+          'Teklif Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(quotes[quoteIndex]['date']),
+          'Sipariş No': orderNumber ?? 'Sipariş Numarası Girilmedi',
+          'Sipariş Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(DateTime.now()),
+          'Adet Fiyatı': product['Adet Fiyatı'],
+          'Adet': product['Adet'],
+          'İşleme Alan': 'admin',
+          'deliveryDate': Timestamp.fromDate(deliveryDate),
+        });
+      }
+    }
+
+    Navigator.of(context).pop();
+    setState(() {
+      selectedQuoteIndexes.clear();
+      selectedQuoteIndex = null;
+    });
   }
+
 
   void toggleSelectAllProducts(int quoteIndex) {
     setState(() {
@@ -327,241 +261,300 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      children: [
-        ListView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          itemCount: quotes.length,
-          itemBuilder: (context, index) {
-            var quote = quotes[index];
-            return ExpansionTile(
-              title: Text('Teklif No: ${quote['quoteNumber']}'),
-              subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'])}'),
-              children: [
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: [
-                      DataColumn(label: Text('')),
-                      DataColumn(label: Text('Kodu')),
-                      DataColumn(label: Text('Detay')),
-                      DataColumn(label: Text('Adet')),
-                      DataColumn(label: Text('Adet Fiyatı')),
-                      DataColumn(label: Text('İskonto')),
-                      DataColumn(label: Text('Toplam Fiyat')),
-                      DataColumn(label: Text('Düzenle')),
-                    ],
-                    rows: (quote['products'] as List<dynamic>).map((product) {
-                      int productIndex = quote['products'].indexOf(product);
-                      bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
-                          product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-                          product['Adet Fiyatı']?.toString() == 'Genel Toplam';
+    return ListView.builder(
+      itemCount: quotes.length,
+      itemBuilder: (context, index) {
+        var quote = quotes[index];
+        return ExpansionTile(
+          title: Text('Teklif No: ${quote['quoteNumber']}'),
+          subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(quote['date'])}'),
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: [
+                  DataColumn(label: Text('')),
+                  DataColumn(label: Text('Kodu')),
+                  DataColumn(label: Text('Detay')),
+                  DataColumn(label: Text('Adet')),
+                  DataColumn(label: Text('Adet Fiyatı')),
+                  DataColumn(label: Text('İskonto')),
+                  DataColumn(label: Text('Toplam Fiyat')),
+                  DataColumn(label: Text('Düzenle')),
+                ],
+                rows: (quote['products'] as List<dynamic>).map((product) {
+                  int productIndex = quote['products'].indexOf(product);
+                  bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+                      product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+                      product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
-                      return DataRow(cells: [
-                        DataCell(
-                          !isTotalRow
-                              ? Checkbox(
-                            value: selectedQuoteIndexes.contains(productIndex) && selectedQuoteIndex == index,
-                            onChanged: (bool? value) {
-                              setState(() {
-                                if (value == true) {
-                                  selectedQuoteIndexes.add(productIndex);
-                                  selectedQuoteIndex = index;
-                                } else {
-                                  selectedQuoteIndexes.remove(productIndex);
-                                  if (selectedQuoteIndexes.isEmpty) {
-                                    selectedQuoteIndex = null;
-                                  }
-                                }
-                              });
-                            },
+                  return DataRow(cells: [
+                    DataCell(
+                      !isTotalRow
+                          ? Checkbox(
+                        value: selectedQuoteIndexes.contains(productIndex) && selectedQuoteIndex == index,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            if (value == true) {
+                              selectedQuoteIndexes.add(productIndex);
+                              selectedQuoteIndex = index;
+                            } else {
+                              selectedQuoteIndexes.remove(productIndex);
+                              if (selectedQuoteIndexes.isEmpty) {
+                                selectedQuoteIndex = null;
+                              }
+                            }
+                          });
+                        },
+                      )
+                          : Container(),
+                    ),
+                    DataCell(Text(product['Kodu']?.toString() ?? '')),
+                    DataCell(Text(product['Detay']?.toString() ?? '')),
+                    DataCell(
+                      isTotalRow
+                          ? Text('')
+                          : Row(
+                        children: [
+                          isEditing && editingIndex == productIndex
+                              ? Expanded(
+                            child: TextField(
+                              controller: quantityController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                hintText: 'Adet',
+                              ),
+                              onChanged: (value) {
+                                setState(() {
+                                  product['Adet'] = value;
+                                });
+                              },
+                              onSubmitted: (value) {
+                                showExplanationDialogForQuoteProduct(index, productIndex);
+                              },
+                            ),
                           )
-                              : Container(),
-                        ),
-                        DataCell(Text(product['Kodu']?.toString() ?? '')),
-                        DataCell(Text(product['Detay']?.toString() ?? '')),
-                        DataCell(
-                          isTotalRow
-                              ? Text('')
                               : Row(
                             children: [
-                              isEditing && editingIndex == productIndex
-                                  ? Expanded(
-                                child: TextField(
-                                  controller: quantityController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: InputDecoration(
-                                    hintText: 'Adet',
-                                  ),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      product['Adet'] = value;
-                                    });
-                                  },
-                                  onSubmitted: (value) {
-                                    showExplanationDialogForQuoteProduct(index, productIndex);
-                                  },
-                                ),
-                              )
-                                  : Row(
-                                children: [
-                                  Text(product['Adet']?.toString() ?? ''),
-                                  if (product['Adet Açıklaması'] != null)
-                                    IconButton(
-                                      icon: Icon(Icons.info, color: Colors.blue),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (BuildContext context) {
-                                            return AlertDialog(
-                                              title: Text('Adet Değişikliği Bilgisi'),
-                                              content: Text(
-                                                  'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () {
-                                                    Navigator.of(context).pop();
-                                                  },
-                                                  child: Text('Tamam'),
-                                                ),
-                                              ],
-                                            );
-                                          },
+                              Text(product['Adet']?.toString() ?? ''),
+                              if (product['Adet Açıklaması'] != null)
+                                IconButton(
+                                  icon: Icon(Icons.info, color: Colors.blue),
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (BuildContext context) {
+                                        return AlertDialog(
+                                          title: Text('Adet Değişikliği Bilgisi'),
+                                          content: Text(
+                                              'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.of(context).pop();
+                                              },
+                                              child: Text('Tamam'),
+                                            ),
+                                          ],
                                         );
                                       },
-                                    ),
-                                ],
-                              ),
+                                    );
+                                  },
+                                ),
                             ],
                           ),
-                        ),
-                        DataCell(
-                          isTotalRow
-                              ? Text(product['Adet Fiyatı']?.toString() ?? '')
+                        ],
+                      ),
+                    ),
+                    DataCell(
+                      isTotalRow
+                          ? Text(product['Adet Fiyatı']?.toString() ?? '')
+                          : Row(
+                        children: [
+                          isEditing && editingIndex == productIndex
+                              ? Expanded(
+                            child: TextField(
+                              controller: priceController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(
+                                hintText: 'Adet Fiyatı',
+                              ),
+                              onChanged: (value) {
+                                setState(() {
+                                  product['Adet Fiyatı'] = value;
+                                });
+                              },
+                              onSubmitted: (value) {
+                                showExplanationDialogForQuoteProduct(index, productIndex);
+                              },
+                            ),
+                          )
                               : Row(
                             children: [
-                              isEditing && editingIndex == productIndex
-                                  ? Expanded(
-                                child: TextField(
-                                  controller: priceController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: InputDecoration(
-                                    hintText: 'Adet Fiyatı',
-                                  ),
-                                  onChanged: (value) {
-                                    setState(() {
-                                      product['Adet Fiyatı'] = value;
-                                    });
-                                  },
-                                  onSubmitted: (value) {
-                                    showExplanationDialogForQuoteProduct(index, productIndex);
-                                  },
-                                ),
-                              )
-                                  : Row(
-                                children: [
-                                  Text(product['Adet Fiyatı']?.toString() ?? ''),
-                                  if (product['Fiyat Açıklaması'] != null)
-                                    IconButton(
-                                      icon: Icon(Icons.info, color: Colors.blue),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (BuildContext context) {
-                                            return AlertDialog(
-                                              title: Text('Fiyat Değişikliği Bilgisi'),
-                                              content: Text(
-                                                  'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () {
-                                                    Navigator.of(context).pop();
-                                                  },
-                                                  child: Text('Tamam'),
-                                                ),
-                                              ],
-                                            );
-                                          },
+                              Text(product['Adet Fiyatı']?.toString() ?? ''),
+                              if (product['Fiyat Açıklaması'] != null)
+                                IconButton(
+                                  icon: Icon(Icons.info, color: Colors.blue),
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (BuildContext context) {
+                                        return AlertDialog(
+                                          title: Text('Fiyat Değişikliği Bilgisi'),
+                                          content: Text(
+                                              'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () {
+                                                Navigator.of(context).pop();
+                                              },
+                                              child: Text('Tamam'),
+                                            ),
+                                          ],
                                         );
                                       },
-                                    ),
-                                ],
-                              ),
+                                    );
+                                  },
+                                ),
                             ],
                           ),
-                        ),
-                        DataCell(Text(product['İskonto']?.toString() ?? '')),
-                        DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
-                        DataCell(
-                          !isTotalRow
-                              ? IconButton(
-                            icon: Icon(Icons.edit, color: Colors.blue),
-                            onPressed: () {
-                              setState(() {
-                                isEditing = true;
-                                editingIndex = productIndex;
-                                originalProductData = Map<String, dynamic>.from(product);
-                                quantityController.text = product['Adet']?.toString() ?? '';
-                                priceController.text = product['Adet Fiyatı']?.toString() ?? '';
-                              });
-                            },
-                          )
-                              : Container(),
-                        ),
-                      ]);
-                    }).toList(),
-                  ),
+                        ],
+                      ),
+                    ),
+                    DataCell(Text(product['İskonto']?.toString() ?? '')),
+                    DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                    DataCell(
+                      !isTotalRow
+                          ? IconButton(
+                        icon: Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () {
+                          setState(() {
+                            isEditing = true;
+                            editingIndex = productIndex;
+                            originalProductData = Map<String, dynamic>.from(product);
+                            quantityController.text = product['Adet']?.toString() ?? '';
+                            priceController.text = product['Adet Fiyatı']?.toString() ?? '';
+                          });
+                        },
+                      )
+                          : Container(),
+                    ),
+                  ]);
+                }).toList(),
+              ),
+            ),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () async {
+                    DateTime? pickedDate = await showDatePicker(
+                      context: context,
+                      initialDate: DateTime.now(),
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime(2100),
+                    );
+                    if (pickedDate != null) {
+                      finalizeOrderConversion(index, pickedDate, null);
+                    }
+                  },
+                  child: Text('Siparişe Dönüştür'),
                 ),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        toggleSelectAllProducts(index);
-                      },
-                      child: Text('Hepsini Seç'),
-                    ),
-                    Spacer(),
-                    TextButton(
-                      onPressed: () => saveQuoteAsPDF(index),
-                      child: Text('PDF Olarak Kaydet'),
-                    ),
-                    TextButton(
-                      onPressed: () => convertQuoteToOrder(index),
-                      child: Text('Siparişe Dönüştür'),
-                    ),
-                  ],
-                )
               ],
-            );
-          },
-        ),
-        Divider(),
-        Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Text(
-            'Beklenen Ürünler',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-        ),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          itemCount: awaitedProducts.length,
-          itemBuilder: (context, index) {
-            var product = awaitedProducts[index];
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class DeliveryDateForm extends StatefulWidget {
+  final List<Map<String, dynamic>> quoteProducts;
+  final Function(List<Map<String, dynamic>>) onSave;
+
+  DeliveryDateForm({required this.quoteProducts, required this.onSave});
+
+  @override
+  _DeliveryDateFormState createState() => _DeliveryDateFormState();
+}
+
+class _DeliveryDateFormState extends State<DeliveryDateForm> {
+  List<Map<String, dynamic>> updatedProducts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    updatedProducts = List<Map<String, dynamic>>.from(widget.quoteProducts);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Teslim Tarihi Seçin'),
+      content: SingleChildScrollView(
+        child: Column(
+          children: updatedProducts.map((product) {
+            int productIndex = updatedProducts.indexOf(product);
+            DateTime? deliveryDate = product['Teslim Tarihi'] != null
+                ? (product['Teslim Tarihi'] as Timestamp?)?.toDate()
+                : null;
+
             return ListTile(
               title: Text(product['Detay']),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Sipariş No: ${product['Sipariş Numarası']}'),
-                  Text('Müşteri: ${product['Müşteri']}'),
-                  Text('Tahmini Teslim Tarihi: ${product['Teslim Tarihi'] != null ? DateFormat('dd MMMM yyyy').format(product['Teslim Tarihi']) : 'Tarih bilgisi yok'}'),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: deliveryDate ?? DateTime.now(),
+                            firstDate: DateTime.now(),
+                            lastDate: DateTime(2100),
+                          );
+
+                          if (pickedDate != null) {
+                            setState(() {
+                              updatedProducts[productIndex]['Teslim Tarihi'] = Timestamp.fromDate(pickedDate);
+                            });
+                          }
+                        },
+                        child: Text(
+                          deliveryDate != null
+                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'
+                              : 'Teslim Tarihi Seçin',
+                        ),
+                      ),
+                      Checkbox(
+                        value: product['isStock'] ?? false,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            updatedProducts[productIndex]['isStock'] = value;
+                          });
+                        },
+                      ),
+                      Text('Bu ürün stokta mı?'),
+                    ],
+                  ),
+                  if (product['isStock'] == true)
+                    Text('Bu ürün stokta mevcut.')
+                  else if (deliveryDate != null)
+                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'),
                 ],
               ),
             );
+          }).toList(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            widget.onSave(updatedProducts);
+            Navigator.of(context).pop(); // Dialog'u kapatma
           },
+          child: Text('Kaydet'),
         ),
       ],
     );

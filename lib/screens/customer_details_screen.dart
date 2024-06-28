@@ -8,7 +8,8 @@ import 'package:intl/intl.dart';
 import 'products_widget.dart';
 import 'kits_widget.dart';
 import 'quotes_widget.dart';
-import 'processed_screen.dart'; // İşlenenler widgetını ekliyoruz.
+import 'processed_screen.dart';
+import 'customer_expected_products_widget.dart'; // Beklenen ürünler widgetını ekliyoruz.
 
 class CustomerDetailsScreen extends StatefulWidget {
   final String customerName;
@@ -31,7 +32,7 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
         children: [
           SizedBox(height: 20),
           ToggleButtons(
-            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2, currentIndex == 3],
+            isSelected: [currentIndex == 0, currentIndex == 1, currentIndex == 2, currentIndex == 3, currentIndex == 4],
             onPressed: (int index) {
               setState(() {
                 currentIndex = index;
@@ -54,12 +55,17 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
                 child: Text('İşlenenler'),
               ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text('Beklenen Ürünler'),
+              ),
             ],
           ),
           if (currentIndex == 0) Expanded(child: ProductsWidget(customerName: widget.customerName)),
           if (currentIndex == 1) Expanded(child: KitsWidget(customerName: widget.customerName)),
           if (currentIndex == 2) Expanded(child: QuotesWidget(customerName: widget.customerName)),
           if (currentIndex == 3) Expanded(child: ProcessedWidget(customerName: widget.customerName)),
+          if (currentIndex == 4) Expanded(child: CustomerExpectedProductsWidget(customerName: widget.customerName)),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),

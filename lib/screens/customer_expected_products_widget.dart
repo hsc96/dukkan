@@ -12,7 +12,7 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
     return FutureBuilder<QuerySnapshot>(
       future: FirebaseFirestore.instance
           .collection('pendingProducts')
-          .where('customerName', isEqualTo: customerName)
+          .where('Müşteri Ünvanı', isEqualTo: customerName)
           .get(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -36,11 +36,19 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
                 : null;
             return Card(
               child: ListTile(
-                title: Text(data['product']['Detay'] ?? 'Detay yok'),
+                title: Text(data['Detay'] ?? 'Detay yok'),
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}'),
+                    Text('Müşteri: ${data['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
+                    Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate) : 'Tarih yok'}'),
+                    Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
+                    Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
+                    Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
+                    Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
+                    Text('Teklif Tarihi: ${data['Teklif Tarihi']}'),
+                    Text('Sipariş Tarihi: ${data['Sipariş Tarihi']}'),
+                    Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
                   ],
                 ),
               ),

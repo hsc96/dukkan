@@ -29,7 +29,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() {
       _events.clear();
       for (var doc in querySnapshot.docs) {
-        var data = doc.data();
+        var data = doc.data() as Map<String, dynamic>;
         DateTime deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
         DateTime deliveryDateOnly = DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
         if (_events[deliveryDateOnly] == null) {
@@ -154,15 +154,19 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: ListView(
               children: _getEventsForDay(_selectedDay ?? _focusedDay).map((event) {
                 return ListTile(
-                  title: Text(event['product']['Detay'] ?? 'Detay yok'),
+                  title: Text(event['Detay'] ?? 'Detay yok'),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Müşteri: ${event['customerName'] ?? 'Müşteri bilgisi yok'}'),
-                      Text('Sipariş No: ${event['orderNumber'] ?? 'Sipariş numarası yok'}'),
-                      Text('Teklif No: ${event['quoteNumber'] ?? 'Teklif numarası yok'}'),
-                      Text('Oluşturan: ${event['createdBy'] ?? 'admin'}'),
-                      Text('Oluşturma Tarihi: ${event['createdAt'] != null ? DateFormat('dd MMMM yyyy').format((event['createdAt'] as Timestamp).toDate()) : 'Tarih bilgisi yok'}'),
+                      Text('Müşteri: ${event['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
+                      Text('Tahmini Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format((event['deliveryDate'] as Timestamp).toDate())}'),
+                      Text('Teklif No: ${event['Teklif No'] ?? 'Teklif numarası yok'}'),
+                      Text('Sipariş No: ${event['Sipariş No'] ?? 'Sipariş numarası yok'}'),
+                      Text('Adet Fiyatı: ${event['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
+                      Text('Adet: ${event['Adet'] ?? 'Adet yok'}'),
+                      Text('Teklif Tarihi: ${event['Teklif Tarihi'] ?? 'Teklif tarihi yok'}'),
+                      Text('Sipariş Tarihi: ${event['Sipariş Tarihi'] ?? 'Sipariş tarihi yok'}'),
+                      Text('İşleme Alan: ${event['İşleme Alan'] ?? 'admin'}'),
                     ],
                   ),
                 );

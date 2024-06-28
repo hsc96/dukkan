@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class DeliveryDateForm extends StatefulWidget {
   final List<Map<String, dynamic>> quoteProducts;
@@ -29,12 +29,12 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
         child: Column(
           children: updatedProducts.map((product) {
             int productIndex = updatedProducts.indexOf(product);
-            DateTime? deliveryDate = product['Teslim Tarihi'] != null
-                ? (product['Teslim Tarihi'] as Timestamp?)?.toDate()
-                : null;
+            DateTime? deliveryDate = product['deliveryDate'] is Timestamp
+                ? (product['deliveryDate'] as Timestamp).toDate()
+                : (product['deliveryDate'] as DateTime?);
 
             return ListTile(
-              title: Text(product['Detay']),
+              title: Text(product['Detay'] ?? 'Detay yok'),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -51,13 +51,13 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
 
                           if (pickedDate != null) {
                             setState(() {
-                              updatedProducts[productIndex]['Teslim Tarihi'] = Timestamp.fromDate(pickedDate);
+                              updatedProducts[productIndex]['deliveryDate'] = pickedDate;
                             });
                           }
                         },
                         child: Text(
                           deliveryDate != null
-                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'
+                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'
                               : 'Teslim Tarihi Seçin',
                         ),
                       ),
@@ -75,7 +75,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                   if (product['isStock'] == true)
                     Text('Bu ürün stokta mevcut.')
                   else if (deliveryDate != null)
-                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
+                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'),
                 ],
               ),
             );
