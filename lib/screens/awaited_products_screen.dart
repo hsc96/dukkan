@@ -11,6 +11,55 @@ class AwaitedProductsScreen extends StatefulWidget {
 }
 
 class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
+  Future<void> markProductAsReady(String productId, Map<String, dynamic> productData) async {
+    var uniqueId = productData['Unique ID'];
+    var customerSnapshot = await FirebaseFirestore.instance
+        .collection('veritabanideneme')
+        .where('Vergi Kimlik Numarası', isEqualTo: uniqueId)
+        .get();
+
+    if (customerSnapshot.docs.isEmpty) {
+      customerSnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('T.C. Kimlik Numarası', isEqualTo: uniqueId)
+          .get();
+    }
+
+    if (customerSnapshot.docs.isNotEmpty) {
+      var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
+      var customerName = customerData['Açıklama'];
+
+      var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+      var customerDetailsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
+
+      if (customerDetailsSnapshot.docs.isNotEmpty) {
+        var docRef = customerDetailsSnapshot.docs.first.reference;
+        var existingProducts = List<Map<String, dynamic>>.from(customerDetailsSnapshot.docs.first.data()['products'] ?? []);
+        existingProducts.add({
+          'Kodu': productData['Kodu'],
+          'Detay': productData['Detay'],
+          'Adet': productData['Adet'],
+          'Adet Fiyatı': productData['Adet Fiyatı'],
+          'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
+              (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+          'Teklif Numarası': productData['Teklif No'],
+          'Teklif Tarihi': productData['Teklif Tarihi'],
+          'Sipariş Numarası': productData['Sipariş No'],
+          'Sipariş Tarihi': productData['Sipariş Tarihi'],
+          'Beklenen Teklif': true,
+          'Ürün Hazır Olma Tarihi': Timestamp.now(),
+        });
+
+        await docRef.update({
+          'products': existingProducts,
+        });
+
+        // Remove product from pendingProducts collection
+        await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -70,6 +119,7 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                       title: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text('Kodu: ${data['Kodu'] ?? 'Kodu yok'}'),
                           Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
                           Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
                           Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
@@ -78,6 +128,12 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                           Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
                           Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
                         ],
+                      ),
+                      trailing: ElevatedButton(
+                        onPressed: () {
+                          markProductAsReady(docs[index].id, data);
+                        },
+                        child: Text('Ürün Hazır'),
                       ),
                     ),
                   ],

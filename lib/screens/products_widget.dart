@@ -680,7 +680,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
   Widget buildInfoButton(Map<String, dynamic> product) {
-    bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A';
+    bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A' && product['Beklenen Teklif'] == null;
     bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
     bool hasExpectedInfo = product['Beklenen Teklif'] != null;
@@ -714,7 +714,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
         SizedBox(width: 5),
         if (hasExpectedInfo)
           ElevatedButton(
-            onPressed: () => showInfoDialogForExpectedQuote(product),
+            onPressed: () => showExpectedQuoteInfoDialog(product),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
             child: Text('B.Teklif'),
           ),
@@ -722,10 +722,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     );
   }
 
-  void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
+  void showExpectedQuoteInfoDialog(Map<String, dynamic> product) {
     DateTime? readyDate;
-    if (product['readyDate'] != null) {
-      readyDate = (product['readyDate'] as Timestamp).toDate();
+    if (product['Ürün Hazır Olma Tarihi'] != null) {
+      readyDate = (product['Ürün Hazır Olma Tarihi'] as Timestamp).toDate();
     }
 
     showDialog(
@@ -755,6 +755,86 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
+
+
+
+  void showExpectedQuoteInfoDialogNew(Map<String, dynamic> product) {
+    DateTime? readyDate;
+    if (product['Ürün Hazır Olma Tarihi'] != null) {
+      readyDate = (product['Ürün Hazır Olma Tarihi'] as Timestamp).toDate();
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Beklenen Teklif Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
+              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
+              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+
+
+
+
+
+
+  void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
+    DateTime? readyDate;
+    if (product['Ürün Hazır Olma Tarihi'] != null) {
+      readyDate = (product['Ürün Hazır Olma Tarihi'] as Timestamp).toDate();
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Beklenen Teklif Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
+              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
+              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+
 
 
   void showInfoDialogForQuote(Map<String, dynamic> product) {
