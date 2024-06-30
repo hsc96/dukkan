@@ -204,30 +204,48 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
     String uniqueId = customerData['Vergi Kimlik Numarası']?.toString() ?? customerData['T.C. Kimlik Numarası']?.toString() ?? '';
 
+    var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var customerProductsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: widget.customerName).get();
+
+    var customerDocRef = customerProductsSnapshot.docs.first.reference;
+    var existingProducts = List<Map<String, dynamic>>.from(customerProductsSnapshot.docs.first.data()['products'] ?? []);
+
     try {
       for (var product in updatedProducts) {
-        var teslimTarihi = product['deliveryDate'];
-        if (teslimTarihi is DateTime) {
-          teslimTarihi = Timestamp.fromDate(teslimTarihi);
-        }
-
         if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
-          await FirebaseFirestore.instance.collection('pendingProducts').add({
-            'Kodu': product['Kodu'],  // Ürün Kodu eklendi
-            'Müşteri Ünvanı': widget.customerName.length > 30 ? widget.customerName.substring(0, 30) : widget.customerName,
-            'Teklif No': quotes[quoteIndex]['quoteNumber'],
-            'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quotes[quoteIndex]['date']),
-            'Sipariş No': orderNumber ?? 'Sipariş Numarası Girilmedi',
-            'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
-            'Adet Fiyatı': product['Adet Fiyatı'],
-            'Adet': product['Adet'],
+          var teslimTarihi = product['deliveryDate'];
+          if (teslimTarihi is DateTime) {
+            teslimTarihi = Timestamp.fromDate(teslimTarihi);
+          }
+
+          var productData = {
+            'Kodu': product['Kodu'], // Ürün Kodu eklendi
             'Detay': product['Detay'],
-            'İşleme Alan': 'admin',
-            'deliveryDate': teslimTarihi,
-            'Unique ID': uniqueId,
-          });
+            'Adet': product['Adet'],
+            'Adet Fiyatı': product['Adet Fiyatı'],
+            'Toplam Fiyat': (double.tryParse(product['Adet']?.toString() ?? '0') ?? 0) *
+                (double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+            'Teklif Numarası': quotes[quoteIndex]['quoteNumber'],
+            'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quotes[quoteIndex]['date']),
+            'Sipariş Numarası': orderNumber ?? 'Sipariş Numarası Girilmedi',
+            'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
+            'Beklenen Teklif': true, // Ek bilgi
+            'Ürün Hazır Olma Tarihi': Timestamp.now(), // Ürün hazır olma tarihi
+          };
+
+          if (product['isStock'] == true) {
+            existingProducts.add(productData);
+          } else {
+            productData['Unique ID'] = uniqueId;
+            productData['deliveryDate'] = teslimTarihi;
+            await FirebaseFirestore.instance.collection('pendingProducts').add(productData);
+          }
         }
       }
+
+      await customerDocRef.update({
+        'products': existingProducts,
+      });
 
       setState(() {
         selectedQuoteIndexes.clear();
