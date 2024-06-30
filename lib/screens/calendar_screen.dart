@@ -32,16 +32,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
         var data = doc.data() as Map<String, dynamic>;
         DateTime? deliveryDate;
         try {
-          deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
+          if (data['deliveryDate'] != null) {
+            deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
+          }
         } catch (e) {
           print("Error converting deliveryDate: $e");
           continue;
         }
-        DateTime deliveryDateOnly = DateTime(deliveryDate!.year, deliveryDate.month, deliveryDate.day);
-        if (_events[deliveryDateOnly] == null) {
-          _events[deliveryDateOnly] = [];
+        if (deliveryDate != null) {
+          DateTime deliveryDateOnly = DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
+          if (_events[deliveryDateOnly] == null) {
+            _events[deliveryDateOnly] = [];
+          }
+          _events[deliveryDateOnly]!.add(data);
         }
-        _events[deliveryDateOnly]!.add(data);
       }
     });
   }
@@ -68,7 +72,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: CustomAppBar(title: 'Takvim'),
+      appBar: CustomAppBar(title: 'Calendar'),
       endDrawer: CustomDrawer(),
       body: Column(
         children: [
@@ -160,23 +164,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: ListView(
               children: _getEventsForDay(_selectedDay ?? _focusedDay).map((event) {
                 return ListTile(
-                  title: Text(event['Detay'] ?? 'Detay yok'), // Ürünün detayı başlıkta
+                  title: Text(event['Detay'] ?? 'No detail'), // Product detail in the title
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Müşteri: ${event['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
-                      Text('Teklif No: ${event['Teklif No'] ?? 'Teklif numarası yok'}'),
-                      Text('Teklif Tarihi: ${event['Teklif Tarihi'] ?? 'Tarih yok'}'),
-                      Text('Sipariş No: ${event['Sipariş No'] ?? 'Sipariş numarası yok'}'),
-                      Text('Sipariş Tarihi: ${event['Sipariş Tarihi'] ?? 'Tarih yok'}'),
-                      Text('İşleme Alan: ${event['İşleme Alan'] ?? 'admin'}'),
-                      Text('Adet: ${event['Adet'] ?? 'Adet yok'}'),
-                      Text('Adet Fiyatı: ${event['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
+                      Text('Customer: ${event['Müşteri Ünvanı'] ?? 'No customer info'}'),
+                      Text('Quote No: ${event['Teklif No'] ?? 'No quote number'}'),
+                      Text('Quote Date: ${event['Teklif Tarihi'] ?? 'No date'}'),
+                      Text('Order No: ${event['Sipariş No'] ?? 'No order number'}'),
+                      Text('Order Date: ${event['Sipariş Tarihi'] ?? 'No date'}'),
+                      Text('Processed by: ${event['İşleme Alan'] ?? 'admin'}'),
+                      Text('Quantity: ${event['Adet'] ?? 'No quantity'}'),
+                      Text('Unit Price: ${event['Adet Fiyatı'] ?? 'No unit price'}'),
                     ],
                   ),
                 );
-
-
               }).toList(),
             ),
           ),

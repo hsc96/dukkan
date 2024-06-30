@@ -21,6 +21,40 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
     return customerData['Vergi Kimlik Numarası']?.toString() ?? customerData['T.C. Kimlik Numarası']?.toString() ?? null;
   }
 
+  Future<void> markProductAsReady(String productId, Map<String, dynamic> productData) async {
+    var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var customerSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
+
+    if (customerSnapshot.docs.isNotEmpty) {
+      var docRef = customerSnapshot.docs.first.reference;
+      var existingProducts = List<Map<String, dynamic>>.from(customerSnapshot.docs.first.data()['products'] ?? []);
+      existingProducts.add({
+        'Kodu': productData['Kodu'],
+        'Detay': productData['Detay'],
+        'Adet': productData['Adet'],
+        'Adet Fiyatı': productData['Adet Fiyatı'],
+        'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
+            (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+        'Teklif Numarası': productData['Teklif No'],
+        'Teklif Tarihi': productData['Teklif Tarihi'],
+        'Sipariş Numarası': productData['Sipariş No'],
+        'Sipariş Tarihi': productData['Sipariş Tarihi'],
+        'Beklenen Teklif': true, // Ek bilgi
+        'Ürün Hazır Olma Tarihi': Timestamp.now(), // Ürün hazır olma tarihi
+      });
+
+      await docRef.update({
+        'products': existingProducts,
+      });
+
+      // Remove product from pendingProducts collection
+      await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+    }
+  }
+
+
+
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
@@ -53,9 +87,18 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
 
             // Teslim tarihine göre sıralama
             docs.sort((a, b) {
-              DateTime aDate = (a['deliveryDate'] as Timestamp).toDate();
-              DateTime bDate = (b['deliveryDate'] as Timestamp).toDate();
-              return aDate.compareTo(bDate);
+              DateTime? aDate = a['deliveryDate'] != null ? (a['deliveryDate'] as Timestamp).toDate() : null;
+              DateTime? bDate = b['deliveryDate'] != null ? (b['deliveryDate'] as Timestamp).toDate() : null;
+
+              if (aDate == null && bDate == null) {
+                return 0;
+              } else if (aDate == null) {
+                return 1;
+              } else if (bDate == null) {
+                return -1;
+              } else {
+                return aDate.compareTo(bDate);
+              }
             });
 
             return ListView.builder(
@@ -68,22 +111,38 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
                     : null;
 
                 return Card(
-                  child: ListTile(
+                  child: ExpansionTile(
                     title: Text(data['Detay'] ?? 'Detay yok'),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Müşteri: ${data['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
-                        Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate) : 'Tarih yok'}'),
-                        Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
-                        Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
-                        Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
-                        Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
-                        Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
-                        Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
-                        Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
+                        Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}'),
                       ],
                     ),
+                    children: [
+                      ListTile(
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Kodu: ${data['Kodu'] ?? 'Kodu yok'}'),
+                            Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
+                            Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
+                            Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
+                            Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
+                            Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
+                            Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
+                            Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
+                          ],
+                        ),
+                        trailing: ElevatedButton(
+                          onPressed: () {
+                            markProductAsReady(docs[index].id, data);
+                          },
+                          child: Text('Ürün Hazır'),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },

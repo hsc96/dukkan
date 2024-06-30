@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class DeliveryDateForm extends StatefulWidget {
   final List<Map<String, dynamic>> quoteProducts;
@@ -24,7 +24,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('Teslim Tarihi Seçin'),
+      title: Text('Select Delivery Date'),
       content: SingleChildScrollView(
         child: Column(
           children: updatedProducts.map((product) {
@@ -34,7 +34,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                 : (product['deliveryDate'] as DateTime?);
 
             return ListTile(
-              title: Text(product['Detay'] ?? 'Detay yok'),
+              title: Text(product['Detay'] ?? 'No detail'),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -57,8 +57,8 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                         },
                         child: Text(
                           deliveryDate != null
-                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'
-                              : 'Teslim Tarihi Seçin',
+                              ? 'Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'
+                              : 'Select Delivery Date',
                         ),
                       ),
                       Checkbox(
@@ -69,13 +69,13 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                           });
                         },
                       ),
-                      Text('Bu ürün stokta mı?'),
+                      Text('Is this product in stock?'),
                     ],
                   ),
                   if (product['isStock'] == true)
-                    Text('Bu ürün stokta mevcut.')
+                    Text('This product is in stock.')
                   else if (deliveryDate != null)
-                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'),
+                    Text('Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
                 ],
               ),
             );
@@ -86,9 +86,9 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
         TextButton(
           onPressed: () {
             widget.onSave(updatedProducts);
-            Navigator.of(context).pop(); // Dialog'u kapatma
+            Navigator.of(context).pop(); // Close the dialog
           },
-          child: Text('Kaydet'),
+          child: Text('Save'),
         ),
       ],
     );

@@ -26,6 +26,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   TextEditingController explanationController = TextEditingController();
   Set<int> selectedQuoteIndexes = {};
   int? selectedQuoteIndex;
+  TextEditingController orderNumberController = TextEditingController();
 
   @override
   void initState() {
@@ -137,79 +138,47 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: Text('Teklif Siparişe Dönüştür'),
-          content: Text('Teklifiniz sipariş olacaktır. Onaylıyor musunuz?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('Hayır'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                showOrderNumberDialog(quoteIndex);
-              },
-              child: Text('Evet'),
-            ),
-          ],
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: orderNumberController,
+                decoration: InputDecoration(hintText: 'Sipariş Numarası'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  showProductDateSelectionDialog(quoteIndex);
+                },
+                child: Text('Devam Et'),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-
-  void showOrderNumberDialog(int quoteIndex) {
+  void showProductDateSelectionDialog(int quoteIndex) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
-        TextEditingController orderNumberController = TextEditingController();
-        return AlertDialog(
-          title: Text('Sipariş Numarası Girin'),
-          content: TextField(
-            controller: orderNumberController,
-            decoration: InputDecoration(hintText: 'Sipariş Numarası (Opsiyonel)'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                DateTime? pickedDate = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (pickedDate != null) {
-                  finalizeOrderConversion(quoteIndex, pickedDate, orderNumberController.text);
-                  Navigator.of(context).pop();
-                }
-              },
-              child: Text('Kaydet'),
-            ),
-            TextButton(
-              onPressed: () async {
-                DateTime? pickedDate = await showDatePicker(
-                  context: context,
-                  initialDate: DateTime.now(),
-                  firstDate: DateTime(2000),
-                  lastDate: DateTime(2100),
-                );
-                if (pickedDate != null) {
-                  finalizeOrderConversion(quoteIndex, pickedDate, null);
-                  Navigator.of(context).pop();
-                }
-              },
-              child: Text('İptal'),
-            ),
-          ],
+        return DeliveryDateForm(
+          quoteProducts: quotes[quoteIndex]['products'].where((product) {
+            return product['Adet Fiyatı'] != 'Toplam Tutar' &&
+                product['Adet Fiyatı'] != 'KDV %20' &&
+                product['Adet Fiyatı'] != 'Genel Toplam';
+          }).toList(),
+          onSave: (updatedProducts) {
+            finalizeOrderConversion(quoteIndex, updatedProducts, orderNumberController.text);
+          },
         );
       },
     );
   }
 
-
-  void finalizeOrderConversion(int quoteIndex, DateTime deliveryDate, String? orderNumber) async {
+  void finalizeOrderConversion(int quoteIndex, List<Map<String, dynamic>> updatedProducts, String? orderNumber) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -221,9 +190,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       },
     );
 
-    List<Map<String, dynamic>> updatedProducts = quotes[quoteIndex]['products'];
-
-    // Müşterinin vergi kimlik numarası veya TC kimlik numarasını bul
     var customerSnapshot = await FirebaseFirestore.instance
         .collection('veritabanideneme')
         .where('Açıklama', isEqualTo: widget.customerName)
@@ -231,47 +197,50 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 
     if (customerSnapshot.docs.isEmpty) {
       Navigator.of(context).pop();
+      print('Müşteri bulunamadı');
       return;
     }
 
     var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
     String uniqueId = customerData['Vergi Kimlik Numarası']?.toString() ?? customerData['T.C. Kimlik Numarası']?.toString() ?? '';
 
-    for (var product in updatedProducts) {
-      if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
-        await FirebaseFirestore.instance.collection('pendingProducts').add({
-          'Müşteri Ünvanı': widget.customerName.length > 30 ? widget.customerName.substring(0, 30) : widget.customerName,
-          'Teklif No': quotes[quoteIndex]['quoteNumber'],
-          'Teklif Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(quotes[quoteIndex]['date']),
-          'Sipariş No': orderNumber ?? 'Sipariş Numarası Girilmedi',
-          'Sipariş Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(DateTime.now()),
-          'Adet Fiyatı': product['Adet Fiyatı'],
-          'Adet': product['Adet'],
-          'Detay': product['Detay'],
-          'İşleme Alan': 'admin',
-          'deliveryDate': Timestamp.fromDate(deliveryDate),
-          'Unique ID': uniqueId,  // Eklenen benzersiz kimlik numarası
-        });
+    try {
+      for (var product in updatedProducts) {
+        var teslimTarihi = product['deliveryDate'];
+        if (teslimTarihi is DateTime) {
+          teslimTarihi = Timestamp.fromDate(teslimTarihi);
+        }
+
+        if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
+          await FirebaseFirestore.instance.collection('pendingProducts').add({
+            'Kodu': product['Kodu'],  // Ürün Kodu eklendi
+            'Müşteri Ünvanı': widget.customerName.length > 30 ? widget.customerName.substring(0, 30) : widget.customerName,
+            'Teklif No': quotes[quoteIndex]['quoteNumber'],
+            'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quotes[quoteIndex]['date']),
+            'Sipariş No': orderNumber ?? 'Sipariş Numarası Girilmedi',
+            'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
+            'Adet Fiyatı': product['Adet Fiyatı'],
+            'Adet': product['Adet'],
+            'Detay': product['Detay'],
+            'İşleme Alan': 'admin',
+            'deliveryDate': teslimTarihi,
+            'Unique ID': uniqueId,
+          });
+        }
       }
+
+      setState(() {
+        selectedQuoteIndexes.clear();
+        selectedQuoteIndex = null;
+      });
+
+      Navigator.of(context).pop();
+      print('Veriler başarıyla kaydedildi');
+    } catch (e) {
+      Navigator.of(context).pop();
+      print('Veri ekleme hatası: $e');
     }
-
-    setState(() {
-      selectedQuoteIndexes.clear();
-      selectedQuoteIndex = null;
-    });
-
-    Navigator.of(context).pop();
   }
-
-
-
-
-
-
-
-
-
-
 
 
   void toggleSelectAllProducts(int quoteIndex) {
@@ -294,7 +263,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
         var quote = quotes[index];
         return ExpansionTile(
           title: Text('Teklif No: ${quote['quoteNumber']}'),
-          subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(quote['date'])}'),
+          subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'])}'),
           children: [
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -473,16 +442,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
             Row(
               children: [
                 TextButton(
-                  onPressed: () async {
-                    DateTime? pickedDate = await showDatePicker(
-                      context: context,
-                      initialDate: DateTime.now(),
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (pickedDate != null) {
-                      finalizeOrderConversion(index, pickedDate, null);
-                    }
+                  onPressed: () {
+                    convertQuoteToOrder(index);
                   },
                   child: Text('Siparişe Dönüştür'),
                 ),
@@ -522,19 +483,21 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
         child: Column(
           children: updatedProducts.map((product) {
             int productIndex = updatedProducts.indexOf(product);
-            DateTime? deliveryDate = product['Teslim Tarihi'] != null
-                ? (product['Teslim Tarihi'] as Timestamp?)?.toDate()
-                : null;
+            DateTime? deliveryDate = product['deliveryDate'] is Timestamp
+                ? (product['deliveryDate'] as Timestamp).toDate()
+                : (product['deliveryDate'] as DateTime?);
 
             return ListTile(
-              title: Text(product['Detay']),
+              title: Text(product['Detay'] ?? 'Detay yok'),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       TextButton(
-                        onPressed: () async {
+                        onPressed: product['isStock'] == true
+                            ? null
+                            : () async {
                           DateTime? pickedDate = await showDatePicker(
                             context: context,
                             initialDate: deliveryDate ?? DateTime.now(),
@@ -544,14 +507,14 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
 
                           if (pickedDate != null) {
                             setState(() {
-                              updatedProducts[productIndex]['Teslim Tarihi'] = Timestamp.fromDate(pickedDate);
+                              updatedProducts[productIndex]['deliveryDate'] = pickedDate;
                             });
                           }
                         },
                         child: Text(
                           deliveryDate != null
-                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'
-                              : 'Teslim Tarihi Seçin',
+                              ? 'Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'
+                              : 'Select Delivery Date',
                         ),
                       ),
                       Checkbox(
@@ -559,16 +522,19 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                         onChanged: (bool? value) {
                           setState(() {
                             updatedProducts[productIndex]['isStock'] = value;
+                            if (value == true) {
+                              updatedProducts[productIndex].remove('deliveryDate');
+                            }
                           });
                         },
                       ),
-                      Text('Bu ürün stokta mı?'),
+                      Text('Is this product in stock?'),
                     ],
                   ),
                   if (product['isStock'] == true)
-                    Text('Bu ürün stokta mevcut.')
+                    Text('This product is in stock.')
                   else if (deliveryDate != null)
-                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'),
+                    Text('Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
                 ],
               ),
             );
@@ -581,7 +547,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
             widget.onSave(updatedProducts);
             Navigator.of(context).pop(); // Dialog'u kapatma
           },
-          child: Text('Kaydet'),
+          child: Text('Save'),
         ),
       ],
     );

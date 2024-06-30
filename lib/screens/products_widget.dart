@@ -683,8 +683,9 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A';
     bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
+    bool hasExpectedInfo = product['Beklenen Teklif'] != null;
 
-    if (!showInfoButtons || (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo)) {
+    if (!showInfoButtons || (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo && !hasExpectedInfo)) {
       return Container();
     }
 
@@ -710,9 +711,51 @@ class _ProductsWidgetState extends State<ProductsWidget> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
             child: Text('Satış'),
           ),
+        SizedBox(width: 5),
+        if (hasExpectedInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForExpectedQuote(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
+            child: Text('B.Teklif'),
+          ),
       ],
     );
   }
+
+  void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
+    DateTime? readyDate;
+    if (product['readyDate'] != null) {
+      readyDate = (product['readyDate'] as Timestamp).toDate();
+    }
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Beklenen Teklif Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
+              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
+              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
   void showInfoDialogForQuote(Map<String, dynamic> product) {
     showDialog(
