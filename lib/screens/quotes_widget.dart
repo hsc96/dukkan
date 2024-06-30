@@ -223,6 +223,20 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 
     List<Map<String, dynamic>> updatedProducts = quotes[quoteIndex]['products'];
 
+    // Müşterinin vergi kimlik numarası veya TC kimlik numarasını bul
+    var customerSnapshot = await FirebaseFirestore.instance
+        .collection('veritabanideneme')
+        .where('Açıklama', isEqualTo: widget.customerName)
+        .get();
+
+    if (customerSnapshot.docs.isEmpty) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
+    String uniqueId = customerData['Vergi Kimlik Numarası']?.toString() ?? customerData['T.C. Kimlik Numarası']?.toString() ?? '';
+
     for (var product in updatedProducts) {
       if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
         await FirebaseFirestore.instance.collection('pendingProducts').add({
@@ -233,18 +247,31 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           'Sipariş Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(DateTime.now()),
           'Adet Fiyatı': product['Adet Fiyatı'],
           'Adet': product['Adet'],
+          'Detay': product['Detay'],
           'İşleme Alan': 'admin',
           'deliveryDate': Timestamp.fromDate(deliveryDate),
+          'Unique ID': uniqueId,  // Eklenen benzersiz kimlik numarası
         });
       }
     }
 
-    Navigator.of(context).pop();
     setState(() {
       selectedQuoteIndexes.clear();
       selectedQuoteIndex = null;
     });
+
+    Navigator.of(context).pop();
   }
+
+
+
+
+
+
+
+
+
+
 
 
   void toggleSelectAllProducts(int quoteIndex) {

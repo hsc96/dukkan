@@ -30,8 +30,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _events.clear();
       for (var doc in querySnapshot.docs) {
         var data = doc.data() as Map<String, dynamic>;
-        DateTime deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
-        DateTime deliveryDateOnly = DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
+        DateTime? deliveryDate;
+        try {
+          deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
+        } catch (e) {
+          print("Error converting deliveryDate: $e");
+          continue;
+        }
+        DateTime deliveryDateOnly = DateTime(deliveryDate!.year, deliveryDate.month, deliveryDate.day);
         if (_events[deliveryDateOnly] == null) {
           _events[deliveryDateOnly] = [];
         }
@@ -154,22 +160,23 @@ class _CalendarScreenState extends State<CalendarScreen> {
             child: ListView(
               children: _getEventsForDay(_selectedDay ?? _focusedDay).map((event) {
                 return ListTile(
-                  title: Text(event['Detay'] ?? 'Detay yok'),
+                  title: Text(event['Detay'] ?? 'Detay yok'), // Ürünün detayı başlıkta
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Müşteri: ${event['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
-                      Text('Tahmini Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format((event['deliveryDate'] as Timestamp).toDate())}'),
                       Text('Teklif No: ${event['Teklif No'] ?? 'Teklif numarası yok'}'),
+                      Text('Teklif Tarihi: ${event['Teklif Tarihi'] ?? 'Tarih yok'}'),
                       Text('Sipariş No: ${event['Sipariş No'] ?? 'Sipariş numarası yok'}'),
-                      Text('Adet Fiyatı: ${event['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
-                      Text('Adet: ${event['Adet'] ?? 'Adet yok'}'),
-                      Text('Teklif Tarihi: ${event['Teklif Tarihi'] ?? 'Teklif tarihi yok'}'),
-                      Text('Sipariş Tarihi: ${event['Sipariş Tarihi'] ?? 'Sipariş tarihi yok'}'),
+                      Text('Sipariş Tarihi: ${event['Sipariş Tarihi'] ?? 'Tarih yok'}'),
                       Text('İşleme Alan: ${event['İşleme Alan'] ?? 'admin'}'),
+                      Text('Adet: ${event['Adet'] ?? 'Adet yok'}'),
+                      Text('Adet Fiyatı: ${event['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
                     ],
                   ),
                 );
+
+
               }).toList(),
             ),
           ),

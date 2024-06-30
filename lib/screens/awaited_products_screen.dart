@@ -36,26 +36,35 @@ class AwaitedProductsScreen extends StatelessWidget {
 
                 var docs = snapshot.data!.docs;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: docs.map((doc) {
-                    var data = doc.data() as Map<String, dynamic>;
+                // Teslim tarihine göre sıralama
+                docs.sort((a, b) {
+                  DateTime aDate = (a['deliveryDate'] as Timestamp).toDate();
+                  DateTime bDate = (b['deliveryDate'] as Timestamp).toDate();
+                  return aDate.compareTo(bDate);
+                });
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    var data = docs[index].data() as Map<String, dynamic>;
                     DateTime? deliveryDate = data['deliveryDate'] != null
                         ? (data['deliveryDate'] as Timestamp).toDate()
                         : null;
+
                     return Card(
                       child: ListTile(
-                        title: Text(data['product']['Detay'] ?? 'Detay yok'),
+                        title: Text(data['Detay'] ?? 'Detay yok'),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Müşteri: ${data['customerName'] ?? 'Müşteri bilgisi yok'}'),
+                            Text('Müşteri: ${data['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
                             Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih bilgisi yok'}'),
                           ],
                         ),
                       ),
                     );
-                  }).toList(),
+                  },
                 );
               },
             ),
