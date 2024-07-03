@@ -173,6 +173,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           onSave: (updatedProducts) {
             finalizeOrderConversion(quoteIndex, updatedProducts, orderNumberController.text);
           },
+          selectedProductIndexes: selectedQuoteIndexes,
         );
       },
     );
@@ -204,48 +205,59 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
     String uniqueId = customerData['Vergi Kimlik Numarası']?.toString() ?? customerData['T.C. Kimlik Numarası']?.toString() ?? '';
 
-    var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
-    var customerProductsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: widget.customerName).get();
-
-    var customerDocRef = customerProductsSnapshot.docs.first.reference;
-    var existingProducts = List<Map<String, dynamic>>.from(customerProductsSnapshot.docs.first.data()['products'] ?? []);
-
     try {
-      for (var product in updatedProducts) {
-        if (product['Adet Fiyatı'] != 'Toplam Tutar' && product['Adet Fiyatı'] != 'KDV %20' && product['Adet Fiyatı'] != 'Genel Toplam') {
-          var teslimTarihi = product['deliveryDate'];
-          if (teslimTarihi is DateTime) {
-            teslimTarihi = Timestamp.fromDate(teslimTarihi);
-          }
+      var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+      var customerSnapshot = await customerProductsCollection.where('customerName', isEqualTo: widget.customerName).get();
+      var existingProducts = <Map<String, dynamic>>[];
 
-          var productData = {
-            'Kodu': product['Kodu'], // Ürün Kodu eklendi
-            'Detay': product['Detay'],
-            'Adet': product['Adet'],
-            'Adet Fiyatı': product['Adet Fiyatı'],
-            'Toplam Fiyat': (double.tryParse(product['Adet']?.toString() ?? '0') ?? 0) *
-                (double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0),
-            'Teklif Numarası': quotes[quoteIndex]['quoteNumber'],
-            'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quotes[quoteIndex]['date']),
-            'Sipariş Numarası': orderNumber ?? 'Sipariş Numarası Girilmedi',
-            'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
-            'Beklenen Teklif': true, // Ek bilgi
-            'Ürün Hazır Olma Tarihi': Timestamp.now(), // Ürün hazır olma tarihi
-          };
+      if (customerSnapshot.docs.isNotEmpty) {
+        existingProducts = List<Map<String, dynamic>>.from(customerSnapshot.docs.first.data()['products'] ?? []);
+      }
 
-          if (product['isStock'] == true) {
-            existingProducts.add(productData);
-          } else {
-            productData['Unique ID'] = uniqueId;
-            productData['deliveryDate'] = teslimTarihi;
-            await FirebaseFirestore.instance.collection('pendingProducts').add(productData);
-          }
+      for (var i = 0; i < updatedProducts.length; i++) {
+        var product = updatedProducts[i];
+        print('Dialog ekranındaki ürün: ${product['Kodu']}, index: $i');
+
+        var teslimTarihi = product['deliveryDate'];
+        if (teslimTarihi is DateTime) {
+          teslimTarihi = Timestamp.fromDate(teslimTarihi);
+        }
+
+        var productData = {
+          'Kodu': product['Kodu'],
+          'Detay': product['Detay'],
+          'Adet': product['Adet'],
+          'Adet Fiyatı': product['Adet Fiyatı'],
+          'Toplam Fiyat': (double.tryParse(product['Adet']?.toString() ?? '0') ?? 0) *
+              (double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+          'Teklif Numarası': quotes[quoteIndex]['quoteNumber'],
+          'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quotes[quoteIndex]['date']),
+          'Sipariş Numarası': orderNumber ?? 'Sipariş Numarası Girilmedi',
+          'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
+          'Beklenen Teklif': true,
+          'Ürün Hazır Olma Tarihi': Timestamp.now(),
+        };
+
+        if (product['isStock'] == true) {
+          existingProducts.add(productData);
+          print('Ürün stok olarak eklendi: ${product['Kodu']}');
+        } else {
+          productData['Unique ID'] = uniqueId;
+          productData['deliveryDate'] = teslimTarihi;
+          await FirebaseFirestore.instance.collection('pendingProducts').add(productData);
+          print('Ürün beklenen ürünler olarak eklendi: ${product['Kodu']}');
         }
       }
 
-      await customerDocRef.update({
-        'products': existingProducts,
-      });
+      if (customerSnapshot.docs.isNotEmpty) {
+        var docRef = customerSnapshot.docs.first.reference;
+        await docRef.update({'products': existingProducts});
+      } else {
+        await customerProductsCollection.add({
+          'customerName': widget.customerName,
+          'products': existingProducts,
+        });
+      }
 
       setState(() {
         selectedQuoteIndexes.clear();
@@ -259,6 +271,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('Veri ekleme hatası: $e');
     }
   }
+
 
 
   void toggleSelectAllProducts(int quoteIndex) {
@@ -477,8 +490,9 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 class DeliveryDateForm extends StatefulWidget {
   final List<Map<String, dynamic>> quoteProducts;
   final Function(List<Map<String, dynamic>>) onSave;
+  final Set<int> selectedProductIndexes;
 
-  DeliveryDateForm({required this.quoteProducts, required this.onSave});
+  DeliveryDateForm({required this.quoteProducts, required this.onSave, required this.selectedProductIndexes});
 
   @override
   _DeliveryDateFormState createState() => _DeliveryDateFormState();
@@ -490,7 +504,10 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
   @override
   void initState() {
     super.initState();
-    updatedProducts = List<Map<String, dynamic>>.from(widget.quoteProducts);
+    updatedProducts = widget.quoteProducts.where((product) {
+      int productIndex = widget.quoteProducts.indexOf(product);
+      return widget.selectedProductIndexes.contains(productIndex);
+    }).toList();
   }
 
   @override
