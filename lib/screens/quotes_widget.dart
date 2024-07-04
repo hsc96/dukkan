@@ -64,15 +64,23 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   }
 
   void saveQuoteAsPDF(int quoteIndex) async {
+    if (selectedQuoteIndexes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lütfen PDF\'e dönüştürmek için ürün seçin')),
+      );
+      return;
+    }
+
     var quote = quotes[quoteIndex];
     var quoteProducts = quote['products'] as List<Map<String, dynamic>>;
+    var selectedProducts = selectedQuoteIndexes.map((i) => quoteProducts[i]).toList();
 
     final pdf = await PDFTemplate.generateQuote(
       widget.customerName,
-      quoteProducts,
-      double.tryParse(quoteProducts.lastWhere((product) => product['Adet Fiyatı'] == 'Toplam Tutar')['Toplam Fiyat']) ?? 0.0,
-      double.tryParse(quoteProducts.lastWhere((product) => product['Adet Fiyatı'] == 'KDV %20')['Toplam Fiyat']) ?? 0.0,
-      double.tryParse(quoteProducts.lastWhere((product) => product['Adet Fiyatı'] == 'Genel Toplam')['Toplam Fiyat']) ?? 0.0,
+      selectedProducts,
+      selectedProducts.fold(0.0, (sum, product) => sum + (double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0)),
+      selectedProducts.fold(0.0, (sum, product) => sum + ((double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) * 0.20)),
+      selectedProducts.fold(0.0, (sum, product) => sum + (double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) + ((double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) * 0.20)),
       '', // Teslim tarihi
       '', // Teklif süresi
     );
@@ -86,6 +94,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
+
+
 
   void showExplanationDialogForQuoteProduct(int quoteIndex, int productIndex) {
     showDialog(
@@ -336,6 +346,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   }
 
   @override
+  @override
+  @override
   Widget build(BuildContext context) {
     return ListView.builder(
       itemCount: quotes.length,
@@ -388,9 +400,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                     DataCell(Text(product['Kodu']?.toString() ?? '')),
                     DataCell(Text(product['Detay']?.toString() ?? '')),
                     DataCell(
-                      isTotalRow
-                          ? Text('')
-                          : Row(
+                      isTotalRow ? Text('') : Row(
                         children: [
                           isEditing && editingIndex == productIndex
                               ? Expanded(
@@ -443,9 +453,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                       ),
                     ),
                     DataCell(
-                      isTotalRow
-                          ? Text(product['Adet Fiyatı']?.toString() ?? '')
-                          : Row(
+                      isTotalRow ? Text(product['Adet Fiyatı']?.toString() ?? '') : Row(
                         children: [
                           isEditing && editingIndex == productIndex
                               ? Expanded(
@@ -500,8 +508,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                     DataCell(Text(product['İskonto']?.toString() ?? '')),
                     DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                     DataCell(
-                      !isTotalRow
-                          ? IconButton(
+                      !isTotalRow ? IconButton(
                         icon: Icon(Icons.edit, color: Colors.blue),
                         onPressed: () {
                           setState(() {
@@ -512,8 +519,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                             priceController.text = product['Adet Fiyatı']?.toString() ?? '';
                           });
                         },
-                      )
-                          : Container(),
+                      ) : Container(),
                     ),
                   ]);
                 }).toList(),
@@ -527,6 +533,12 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                   },
                   child: Text('Siparişe Dönüştür'),
                 ),
+                TextButton(
+                  onPressed: () {
+                    saveQuoteAsPDF(index);
+                  },
+                  child: Text('PDF\'e Dönüştür'),
+                ),
               ],
             ),
           ],
@@ -534,6 +546,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       },
     );
   }
+
+
 }
 
 class DeliveryDateForm extends StatefulWidget {
