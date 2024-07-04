@@ -114,6 +114,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                       quoteProduct['Eski Fiyat'] = originalProductData?['Adet Fiyatı']?.toString();
                       quoteProduct['Adet Fiyatı'] = priceController.text;
                     }
+                    updateTotals(quoteIndex); // Toplamları güncelle
                     saveEditsToDatabase(quoteIndex); // Veritabanına kaydet
                     originalProductData = null;
                   });
@@ -131,6 +132,52 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       },
     );
   }
+
+  void updateTotals(int quoteIndex) {
+    var quote = quotes[quoteIndex];
+    var products = quote['products'] as List<Map<String, dynamic>>;
+
+    double subtotal = 0.0;
+    double discount = 0.0;
+    double total = 0.0;
+    double vat = 0.0;
+    double generalTotal = 0.0;
+
+    for (var product in products) {
+      if (product['Adet'] != null && product['Adet Fiyatı'] != null) {
+        double quantity = double.tryParse(product['Adet'].toString()) ?? 0;
+        double price = double.tryParse(product['Adet Fiyatı'].toString()) ?? 0;
+        double productTotal = quantity * price;
+
+        product['Toplam Fiyat'] = productTotal.toStringAsFixed(3);  // Toplam fiyatı 3 ondalık basamağa kadar yuvarla
+        subtotal += productTotal;
+
+        if (product['İskonto'] != null) {
+          discount += productTotal * (double.tryParse(product['İskonto'].toString()) ?? 0) / 100;
+        }
+
+        vat += productTotal * 0.20;
+      }
+    }
+
+    total = subtotal - discount;
+    generalTotal = total + vat;
+
+    for (var product in products) {
+      if (product['Adet Fiyatı'] == 'Toplam Tutar') {
+        product['Toplam Fiyat'] = total.toStringAsFixed(3);  // Toplam tutarı 3 ondalık basamağa kadar yuvarla
+      } else if (product['Adet Fiyatı'] == 'KDV %20') {
+        product['Toplam Fiyat'] = vat.toStringAsFixed(3);  // KDV'yi 3 ondalık basamağa kadar yuvarla
+      } else if (product['Adet Fiyatı'] == 'Genel Toplam') {
+        product['Toplam Fiyat'] = generalTotal.toStringAsFixed(3);  // Genel toplamı 3 ondalık basamağa kadar yuvarla
+      }
+    }
+
+    saveEditsToDatabase(quoteIndex);
+  }
+
+
+
 
   void convertQuoteToOrder(int quoteIndex) {
     showDialog(
@@ -271,6 +318,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('Veri ekleme hatası: $e');
     }
   }
+
+
 
 
 
