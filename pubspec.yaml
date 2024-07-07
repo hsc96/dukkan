@@ -39,4 +39,4 @@ flutter:
   fonts:
     - family: Roboto
       fonts:
-        - asset: lib/assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Regular.ttf

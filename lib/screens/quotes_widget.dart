@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:open_file/open_file.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
-import 'pdf_service.dart';
 import 'pdf_template.dart';
 
 class QuotesWidget extends StatefulWidget {
@@ -62,27 +61,45 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       'products': quote['products'],
     });
   }
-
   void saveQuoteAsPDF(int quoteIndex) async {
     if (selectedQuoteIndexes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lütfen PDF\'e dönüştürmek için ürün seçin')),
+        SnackBar(content: Text('Lütfen ürün seçin')),
       );
       return;
     }
 
     var quote = quotes[quoteIndex];
-    var quoteProducts = quote['products'] as List<Map<String, dynamic>>;
-    var selectedProducts = selectedQuoteIndexes.map((i) => quoteProducts[i]).toList();
+    var quoteProducts = (quote['products'] as List<Map<String, dynamic>>)
+        .asMap()
+        .entries
+        .where((entry) => selectedQuoteIndexes.contains(entry.key))
+        .map((entry) => entry.value)
+        .toList();
+
+    double total = quoteProducts.fold(0, (sum, item) => sum + (double.tryParse(item['Toplam Fiyat'].toString()) ?? 0.0));
+    double vat = total * 0.20;
+    double grandTotal = total + vat;
+
+    DateTime quoteDate;
+    if (quote['date'] is Timestamp) {
+      quoteDate = (quote['date'] as Timestamp).toDate();
+    } else if (quote['date'] is DateTime) {
+      quoteDate = quote['date'];
+    } else {
+      quoteDate = DateTime.now();
+    }
 
     final pdf = await PDFTemplate.generateQuote(
       widget.customerName,
-      selectedProducts,
-      selectedProducts.fold(0.0, (sum, product) => sum + (double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0)),
-      selectedProducts.fold(0.0, (sum, product) => sum + ((double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) * 0.20)),
-      selectedProducts.fold(0.0, (sum, product) => sum + (double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) + ((double.tryParse(product['Toplam Fiyat'].toString()) ?? 0.0) * 0.20)),
+      quoteProducts,
+      total,
+      vat,
+      grandTotal,
       '', // Teslim tarihi
       '', // Teklif süresi
+      quote['quoteNumber'], // Yeni parametreler
+      quoteDate, // Yeni parametreler
     );
 
     try {
@@ -94,7 +111,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
-
 
 
   void showExplanationDialogForQuoteProduct(int quoteIndex, int productIndex) {
@@ -173,21 +189,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     total = subtotal - discount;
     generalTotal = total + vat;
 
-    for (var product in products) {
-      if (product['Adet Fiyatı'] == 'Toplam Tutar') {
-        product['Toplam Fiyat'] = total.toStringAsFixed(3);  // Toplam tutarı 3 ondalık basamağa kadar yuvarla
-      } else if (product['Adet Fiyatı'] == 'KDV %20') {
-        product['Toplam Fiyat'] = vat.toStringAsFixed(3);  // KDV'yi 3 ondalık basamağa kadar yuvarla
-      } else if (product['Adet Fiyatı'] == 'Genel Toplam') {
-        product['Toplam Fiyat'] = generalTotal.toStringAsFixed(3);  // Genel toplamı 3 ondalık basamağa kadar yuvarla
-      }
-    }
-
     saveEditsToDatabase(quoteIndex);
   }
-
-
-
 
   void convertQuoteToOrder(int quoteIndex) {
     showDialog(
@@ -293,14 +296,17 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
+          'Müşteri': widget.customerName,
         };
 
         if (product['isStock'] == true) {
+          productData['buttonInfo'] = 'Teklif'; // Stok seçildiğinde buton bilgisini "Teklif" olarak ayarla
           existingProducts.add(productData);
           print('Ürün stok olarak eklendi: ${product['Kodu']}');
         } else {
           productData['Unique ID'] = uniqueId;
           productData['deliveryDate'] = teslimTarihi;
+          productData['buttonInfo'] = 'B.sipariş'; // Stok seçilmediğinde buton bilgisini "B.sipariş" olarak ayarla
           await FirebaseFirestore.instance.collection('pendingProducts').add(productData);
           print('Ürün beklenen ürünler olarak eklendi: ${product['Kodu']}');
         }
@@ -331,8 +337,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 
 
 
-
-
   void toggleSelectAllProducts(int quoteIndex) {
     setState(() {
       var quoteProducts = quotes[quoteIndex]['products'] as List<Map<String, dynamic>>;
@@ -345,8 +349,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     });
   }
 
-  @override
-  @override
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
@@ -546,8 +548,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       },
     );
   }
-
-
 }
 
 class DeliveryDateForm extends StatefulWidget {

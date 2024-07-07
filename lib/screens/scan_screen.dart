@@ -531,14 +531,20 @@ class _ScanScreenState extends State<ScanScreen> {
     String teslimTarihi = await _selectDate(context);
     String teklifSuresi = await _selectOfferDuration(context);
 
+    // Teklif numarası ve tarihini belirle
+    String quoteNumber = "CSK20240001"; // Bu örnekte sabit bir numara kullanılıyor, dinamik olarak da alınabilir
+    DateTime quoteDate = DateTime.now(); // Teklif tarihi şu anki zaman
+
     final pdf = await PDFTemplate.generateQuote(
       selectedCustomer!,
-      scannedProducts,
+      scannedProducts.cast<Map<String, dynamic>>(),
       toplamTutar,
       kdv,
       genelToplam,
       teslimTarihi,
       teklifSuresi,
+      quoteNumber, // Yeni parametre
+      quoteDate, // Yeni parametre
     );
 
     try {
@@ -550,6 +556,7 @@ class _ScanScreenState extends State<ScanScreen> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
+
 
   Future<String> _selectDate(BuildContext context) async {
     DateTime selectedDate = DateTime.now();
