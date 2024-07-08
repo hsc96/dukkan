@@ -882,7 +882,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               Text('Ana Kit Adı: ${product['Ana Kit Adı'] ?? 'N/A'}'),
               Text('Alt Kit Adı: ${product['Alt Kit Adı'] ?? 'N/A'}'),
               Text('Oluşturan Kişi: ${product['Oluşturan Kişi'] ?? 'Admin'}'),
-              Text('Siparişe Dönüştürme Tarihi: ${siparisTarihi != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(siparisTarihi) : siparisTarihi}'),
+              Text('İşleme Alma Tarihi: ${product['işleme Alma Tarihi'] != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(product['işleme Alma Tarihi'].toDate()) : 'N/A'}'),
             ],
           ),
           actions: [
@@ -894,6 +894,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
             ),
           ],
         );
+
       },
     );
   }

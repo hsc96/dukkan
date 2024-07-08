@@ -4,6 +4,10 @@ import 'package:barcode_scan2/barcode_scan2.dart';
 import 'package:intl/intl.dart';
 import 'dovizservice.dart';
 import 'firestore_service.dart';
+import 'pdf_template.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
+import 'dart:io';
 
 class KitsWidget extends StatefulWidget {
   final String customerName;
@@ -28,9 +32,18 @@ class _KitsWidgetState extends State<KitsWidget> {
   void initState() {
     super.initState();
     fetchKits();
-    fetchDovizKur();
+    initializeDovizKur();
   }
 
+  Future<void> initializeDovizKur() async {
+    DovizService dovizService = DovizService();
+    dovizService.scheduleDailyUpdate();
+    var kurlar = await dovizService.getDovizKur();
+    setState(() {
+      dolarKur = kurlar['dolar']!;
+      euroKur = kurlar['euro']!;
+    });
+  }
   Future<void> fetchDovizKur() async {
     DovizService dovizService = DovizService();
     try {
@@ -315,14 +328,167 @@ class _KitsWidgetState extends State<KitsWidget> {
     }
   }
 
+  Future<void> generateKitPDF(int kitIndex) async {
+    var kit = mainKits[kitIndex];
+    var products = List<Map<String, dynamic>>.from(kit['products']);
+    for (var subKit in kit['subKits']) {
+      for (var product in subKit['products']) {
+        product['Alt Kit Adı'] = subKit['name'];
+        products.add(product);
+      }
+    }
+
+    var productsCollection = FirebaseFirestore.instance.collection('urunler');
+    var customerDiscount = await firestoreService.getCustomerDiscount(widget.customerName);
+    String discountLevel = customerDiscount['iskonto'] ?? '';
+
+    for (var product in products) {
+      var productQuerySnapshot = await productsCollection.where('Kodu', isEqualTo: product['Kodu']).get();
+      if (productQuerySnapshot.docs.isNotEmpty) {
+        var productData = productQuerySnapshot.docs.first.data();
+        double priceInTl = 0.0;
+        double price = 0.0;
+        if (productData['Fiyat'] is String) {
+          price = double.tryParse(productData['Fiyat']) ?? 0.0;
+        } else if (productData['Fiyat'] is num) {
+          price = productData['Fiyat'].toDouble();
+        }
+
+        String currency = productData['Doviz']?.toString() ?? '';
+
+        if (currency == 'Euro') {
+          priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+        } else if (currency == 'Dolar') {
+          priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+        } else {
+          priceInTl = price;
+        }
+
+        double adet = double.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
+
+        if (discountLevel.isNotEmpty) {
+          var discountData = await firestoreService.getDiscountRates(discountLevel, productData['Marka'] ?? '');
+          double discountRate = discountData['rate'] ?? 0.0;
+          double discountedPrice = priceInTl * (1 - (discountRate / 100));
+          product['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
+          product['Toplam Fiyat'] = (discountedPrice * adet).toStringAsFixed(2);
+          product['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
+        } else {
+          product['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
+          product['Toplam Fiyat'] = (priceInTl * adet).toStringAsFixed(2);
+          product['İskonto'] = '0%';
+        }
+      }
+    }
+
+    double total = products.fold(0, (sum, item) => sum + (double.tryParse(item['Toplam Fiyat'].toString()) ?? 0.0));
+    double vat = total * 0.20;
+    double grandTotal = total + vat;
+    String kitName = kit['name'];
+    DateTime kitDate = DateTime.now();
+
+    final pdf = await PDFTemplate.generateKitPDF(
+      widget.customerName,
+      products,
+      total,
+      vat,
+      grandTotal,
+      kitName,
+      kitDate,
+    );
+
+    // PDF'i kaydedin ve açın
+    final output = await getTemporaryDirectory();
+    final file = File("${output.path}/${kitName}_kit.pdf");
+    await file.writeAsBytes(await pdf.save());
+    await OpenFile.open(file.path);
+  }
+
+
+  Future<void> generateSubKitPDF(int kitIndex, int subKitIndex) async {
+    var kit = mainKits[kitIndex];
+    var subKit = kit['subKits'][subKitIndex];
+    var products = List<Map<String, dynamic>>.from(subKit['products']);
+    var productsCollection = FirebaseFirestore.instance.collection('urunler');
+    var customerDiscount = await firestoreService.getCustomerDiscount(widget.customerName);
+    String discountLevel = customerDiscount['iskonto'] ?? '';
+
+    for (var product in products) {
+      var productQuerySnapshot = await productsCollection.where('Kodu', isEqualTo: product['Kodu']).get();
+      if (productQuerySnapshot.docs.isNotEmpty) {
+        var productData = productQuerySnapshot.docs.first.data();
+        double priceInTl = 0.0;
+        double price = 0.0;
+        if (productData['Fiyat'] is String) {
+          price = double.tryParse(productData['Fiyat']) ?? 0.0;
+        } else if (productData['Fiyat'] is num) {
+          price = productData['Fiyat'].toDouble();
+        }
+
+        String currency = productData['Doviz']?.toString() ?? '';
+
+        if (currency == 'Euro') {
+          priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+        } else if (currency == 'Dolar') {
+          priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+        } else {
+          priceInTl = price;
+        }
+
+        double adet = double.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
+
+        if (discountLevel.isNotEmpty) {
+          var discountData = await firestoreService.getDiscountRates(discountLevel, productData['Marka'] ?? '');
+          double discountRate = discountData['rate'] ?? 0.0;
+          double discountedPrice = priceInTl * (1 - (discountRate / 100));
+          product['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
+          product['Toplam Fiyat'] = (discountedPrice * adet).toStringAsFixed(2);
+          product['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
+        } else {
+          product['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
+          product['Toplam Fiyat'] = (priceInTl * adet).toStringAsFixed(2);
+          product['İskonto'] = '0%';
+        }
+      }
+    }
+
+    double total = products.fold(0, (sum, item) => sum + (double.tryParse(item['Toplam Fiyat'].toString()) ?? 0.0));
+    double vat = total * 0.20;
+    double grandTotal = total + vat;
+    String kitName = "${kit['name']} - ${subKit['name']}";
+    DateTime kitDate = DateTime.now();
+
+    final pdf = await PDFTemplate.generateKitPDF(
+      widget.customerName,
+      products,
+      total,
+      vat,
+      grandTotal,
+      kitName,
+      kitDate,
+    );
+
+    // PDF'i kaydedin ve açın
+    final output = await getTemporaryDirectory();
+    final file = File("${output.path}/${kitName}_subkit.pdf");
+    await file.writeAsBytes(await pdf.save());
+    await OpenFile.open(file.path);
+  }
+
+
+
+
   Future<void> processKit(int kitIndex, {int? subKitIndex}) async {
     List<Map<String, dynamic>> productsToProcess = [];
+    DateTime currentDate = DateTime.now(); // İşleme alma tarihi
+
     if (subKitIndex == null) {
       productsToProcess = List.from(mainKits[kitIndex]['products']);
       for (var subKit in mainKits[kitIndex]['subKits']) {
         for (var product in subKit['products']) {
           product['Ana Kit Adı'] = mainKits[kitIndex]['name'];
           product['Alt Kit Adı'] = subKit['name'];
+          product['işleme Alma Tarihi'] = currentDate;
           productsToProcess.add(product);
         }
       }
@@ -331,6 +497,7 @@ class _KitsWidgetState extends State<KitsWidget> {
       for (var product in productsToProcess) {
         product['Ana Kit Adı'] = mainKits[kitIndex]['name'];
         product['Alt Kit Adı'] = mainKits[kitIndex]['subKits'][subKitIndex]['name'];
+        product['işleme Alma Tarihi'] = currentDate;
       }
     }
 
@@ -382,6 +549,7 @@ class _KitsWidgetState extends State<KitsWidget> {
           product['İskonto'] = '0%';
         }
 
+        product['işleme Alma Tarihi'] = currentDate; // İşleme alma tarihini ekliyoruz
         processedProducts.add(product);
       }
     }
@@ -406,6 +574,11 @@ class _KitsWidgetState extends State<KitsWidget> {
       SnackBar(content: Text('Ürünler başarıyla işlendi')),
     );
   }
+
+
+
+
+
 
 
 
@@ -441,32 +614,63 @@ class _KitsWidgetState extends State<KitsWidget> {
                       subtitle: Text('Kodu: ${product['Kodu'] ?? ''}, Adet: ${product['Adet'] ?? ''}'),
                     );
                   }).toList(),
-                  ListTile(
-                    title: ElevatedButton(
-                      onPressed: () => showEditSubKitDialog(index, subKitIndex),
-                      child: Text('Düzenle'),
-                    ),
-                  ),
-                  ListTile(
-                    title: ElevatedButton(
-                      onPressed: () => processKit(index, subKitIndex: subKitIndex),
-                      child: Text('İşleme Al'),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ListTile(
+                          title: ElevatedButton(
+                            onPressed: () => showEditSubKitDialog(index, subKitIndex),
+                            child: Text('Düzenle'),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListTile(
+                          title: ElevatedButton(
+                            onPressed: () => processKit(index, subKitIndex: subKitIndex),
+                            child: Text('İşleme Al'),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListTile(
+                          title: ElevatedButton(
+                            onPressed: () => generateSubKitPDF(index, subKitIndex),
+                            child: Text('PDF Olarak İndir'),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               );
             }).toList(),
-            ListTile(
-              title: ElevatedButton(
-                onPressed: () => processKit(index),
-                child: Text('İşleme Al'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: ListTile(
+                    title: ElevatedButton(
+                      onPressed: () => processKit(index),
+                      child: Text('İşleme Al'),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ListTile(
+                    title: ElevatedButton(
+                      onPressed: () => generateKitPDF(index),
+                      child: Text('PDF Olarak İndir'),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );
       },
     );
   }
+
 
   @override
   Widget build(BuildContext context) {

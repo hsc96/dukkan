@@ -48,8 +48,19 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
     fetchCustomers();
-    fetchDovizKur();
+    initializeDovizKur();
   }
+
+  Future<void> initializeDovizKur() async {
+    DovizService dovizService = DovizService();
+    dovizService.scheduleDailyUpdate();
+    var kurlar = await dovizService.getDovizKur();
+    setState(() {
+      dolarKur = kurlar['dolar']!;
+      euroKur = kurlar['euro']!;
+    });
+  }
+
 
   void filterCustomers(String query) {
     setState(() {
