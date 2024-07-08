@@ -680,10 +680,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
   Widget buildInfoButton(Map<String, dynamic> product) {
-    bool hasQuoteInfo = product['Teklif Numarası'] != null && product['Teklif Numarası'] != 'N/A';
+    bool hasQuoteInfo = product['buttonInfo'] == 'Teklif';
     bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
-    bool hasExpectedInfo = product['Beklenen Teklif'] == true;  // Bu satır değiştirildi
+    bool hasExpectedInfo = product['buttonInfo'] == 'B.sipariş';
 
     if (!showInfoButtons || (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo && !hasExpectedInfo)) {
       return Container();
@@ -691,7 +691,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
     return Column(
       children: [
-        if (hasQuoteInfo && !hasExpectedInfo)  // Bu kontrol eklendi
+        if (hasQuoteInfo)
           ElevatedButton(
             onPressed: () => showInfoDialogForQuote(product),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
@@ -721,6 +721,8 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       ],
     );
   }
+
+
 
 
   void showExpectedQuoteInfoDialog(Map<String, dynamic> product) {
