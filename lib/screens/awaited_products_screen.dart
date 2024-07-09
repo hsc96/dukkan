@@ -35,7 +35,8 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
       if (customerDetailsSnapshot.docs.isNotEmpty) {
         var docRef = customerDetailsSnapshot.docs.first.reference;
         var existingProducts = List<Map<String, dynamic>>.from(customerDetailsSnapshot.docs.first.data()['products'] ?? []);
-        existingProducts.add({
+
+        var productInfo = {
           'Kodu': productData['Kodu'],
           'Detay': productData['Detay'],
           'Adet': productData['Adet'],
@@ -48,7 +49,10 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
           'Sipariş Tarihi': productData['Sipariş Tarihi'],
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
-        });
+          'buttonInfo': 'B.sipariş' // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
+        };
+
+        existingProducts.add(productInfo);
 
         await docRef.update({
           'products': existingProducts,
@@ -59,6 +63,7 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +115,7 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Müşteri: ${data['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
+                      Text('Müşteri: ${data['Müşteri'] ?? 'Müşteri bilgisi yok'}'),
                       Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}'),
                     ],
                   ),
@@ -120,8 +125,8 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Kodu: ${data['Kodu'] ?? 'Kodu yok'}'),
-                          Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
-                          Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
+                          Text('Teklif No: ${data['Teklif Numarası'] ?? 'Teklif numarası yok'}'),
+                          Text('Sipariş No: ${data['Sipariş Numarası'] ?? 'Sipariş numarası yok'}'),
                           Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
                           Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
                           Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
@@ -136,10 +141,12 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                         child: Text('Ürün Hazır'),
                       ),
                     ),
+
                   ],
                 ),
               );
             },
+
           );
         },
       ),

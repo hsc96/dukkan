@@ -22,35 +22,58 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
   }
 
   Future<void> markProductAsReady(String productId, Map<String, dynamic> productData) async {
-    var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
-    var customerSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
+    var uniqueId = productData['Unique ID'];
+    var customerSnapshot = await FirebaseFirestore.instance
+        .collection('veritabanideneme')
+        .where('Vergi Kimlik Numarası', isEqualTo: uniqueId)
+        .get();
+
+    if (customerSnapshot.docs.isEmpty) {
+      customerSnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('T.C. Kimlik Numarası', isEqualTo: uniqueId)
+          .get();
+    }
 
     if (customerSnapshot.docs.isNotEmpty) {
-      var docRef = customerSnapshot.docs.first.reference;
-      var existingProducts = List<Map<String, dynamic>>.from(customerSnapshot.docs.first.data()['products'] ?? []);
-      existingProducts.add({
-        'Kodu': productData['Kodu'],
-        'Detay': productData['Detay'],
-        'Adet': productData['Adet'],
-        'Adet Fiyatı': productData['Adet Fiyatı'],
-        'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
-            (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
-        'Teklif Numarası': productData['Teklif No'],
-        'Teklif Tarihi': productData['Teklif Tarihi'],
-        'Sipariş Numarası': productData['Sipariş No'],
-        'Sipariş Tarihi': productData['Sipariş Tarihi'],
-        'Beklenen Teklif': true, // Ek bilgi
-        'Ürün Hazır Olma Tarihi': Timestamp.now(), // Ürün hazır olma tarihi
-      });
+      var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
+      var customerName = customerData['Açıklama'];
 
-      await docRef.update({
-        'products': existingProducts,
-      });
+      var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+      var customerDetailsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
 
-      // Remove product from pendingProducts collection
-      await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+      if (customerDetailsSnapshot.docs.isNotEmpty) {
+        var docRef = customerDetailsSnapshot.docs.first.reference;
+        var existingProducts = List<Map<String, dynamic>>.from(customerDetailsSnapshot.docs.first.data()['products'] ?? []);
+
+        var productInfo = {
+          'Kodu': productData['Kodu'],
+          'Detay': productData['Detay'],
+          'Adet': productData['Adet'],
+          'Adet Fiyatı': productData['Adet Fiyatı'],
+          'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
+              (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+          'Teklif Numarası': productData['Teklif No'],
+          'Teklif Tarihi': productData['Teklif Tarihi'],
+          'Sipariş Numarası': productData['Sipariş No'],
+          'Sipariş Tarihi': productData['Sipariş Tarihi'],
+          'Beklenen Teklif': true,
+          'Ürün Hazır Olma Tarihi': Timestamp.now(),
+          'buttonInfo': 'B.sipariş' // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
+        };
+
+        existingProducts.add(productInfo);
+
+        await docRef.update({
+          'products': existingProducts,
+        });
+
+        // Remove product from pendingProducts collection
+        await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+      }
     }
   }
+
 
 
 
@@ -116,7 +139,7 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Müşteri: ${data['Müşteri Ünvanı'] ?? 'Müşteri bilgisi yok'}'),
+                        Text('Müşteri: ${data['Müşteri'] ?? 'Müşteri bilgisi yok'}'),
                         Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}'),
                       ],
                     ),
@@ -126,8 +149,8 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Kodu: ${data['Kodu'] ?? 'Kodu yok'}'),
-                            Text('Teklif No: ${data['Teklif No'] ?? 'Teklif numarası yok'}'),
-                            Text('Sipariş No: ${data['Sipariş No'] ?? 'Sipariş numarası yok'}'),
+                            Text('Teklif No: ${data['Teklif Numarası'] ?? 'Teklif numarası yok'}'),
+                            Text('Sipariş No: ${data['Sipariş Numarası'] ?? 'Sipariş numarası yok'}'),
                             Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
                             Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
                             Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),

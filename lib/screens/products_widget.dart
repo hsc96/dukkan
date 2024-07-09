@@ -660,7 +660,12 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
   Future<void> processSelectedProducts(String processName) async {
-    var selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
+    var selectedProducts = selectedIndexes.map((index) {
+      var product = customerProducts[index];
+      product['buttonInfo'] = 'Teklif'; // Ürünlerin buttonInfo alanını Teklif olarak ayarlayın
+      return product;
+    }).toList();
+
     var processedData = {
       'name': processName,
       'date': Timestamp.now(),
@@ -678,6 +683,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
     saveEditsToDatabase(0);
   }
+
 
   Widget buildInfoButton(Map<String, dynamic> product) {
     bool hasQuoteInfo = product['buttonInfo'] == 'Teklif';
@@ -716,11 +722,17 @@ class _ProductsWidgetState extends State<ProductsWidget> {
           ElevatedButton(
             onPressed: () => showExpectedQuoteInfoDialog(product),
             style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
-            child: Text('B.Sipariş'),
+            child: Text('B.sipariş'),
           ),
       ],
     );
   }
+
+
+
+
+
+
 
 
 
@@ -739,9 +751,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text('Müşteri: ${product['Müşteri'] ?? 'N/A'}'),
               Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
-              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
               Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
+              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
               Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
               Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
             ],
@@ -758,49 +771,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
-
-
-
-  void showExpectedQuoteInfoDialogNew(Map<String, dynamic> product) {
-    DateTime? readyDate;
-    if (product['Ürün Hazır Olma Tarihi'] != null) {
-      readyDate = (product['Ürün Hazır Olma Tarihi'] as Timestamp).toDate();
-    }
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Beklenen Teklif Bilgisi'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
-              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
-              Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
-              Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
-              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('Tamam'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-
-
-
-
-
-
 
   void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
     DateTime? readyDate;
