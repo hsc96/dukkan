@@ -785,6 +785,9 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     );
   }
 
+
+
+
   void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
     DateTime? readyDate;
     if (product['Ürün Hazır Olma Tarihi'] != null) {
@@ -832,9 +835,11 @@ class _ProductsWidgetState extends State<ProductsWidget> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text('Müşteri: ${product['Müşteri'] ?? 'N/A'}'),
               Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}'),
               Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
               Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
+              Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
             ],
           ),
           actions: [

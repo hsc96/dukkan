@@ -53,13 +53,14 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
           'Adet Fiyatı': productData['Adet Fiyatı'],
           'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
               (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
-          'Teklif Numarası': productData['Teklif No'],
+          'Teklif Numarası': productData['Teklif Numarası'],
           'Teklif Tarihi': productData['Teklif Tarihi'],
-          'Sipariş Numarası': productData['Sipariş No'],
+          'Sipariş Numarası': productData['Sipariş Numarası'],
           'Sipariş Tarihi': productData['Sipariş Tarihi'],
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
-          'buttonInfo': 'B.sipariş' // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
+          'buttonInfo': 'B.sipariş', // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
+          'Müşteri': customerName // Müşteri unvanını ekliyoruz
         };
 
         existingProducts.add(productInfo);
@@ -73,9 +74,6 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
       }
     }
   }
-
-
-
 
 
   @override
@@ -176,3 +174,5 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
     );
   }
 }
+
+

@@ -297,7 +297,12 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
           'Müşteri': widget.customerName,
+
         };
+        print('Teklif Numarası: ${quotes[quoteIndex]['quoteNumber']}');
+        print('Sipariş Numarası: $orderNumber');
+        print('Teklif Tarihi: ${quotes[quoteIndex]['date']}');
+        print('Müşteri: ${widget.customerName}');
 
         if (product['isStock'] == true) {
           productData['buttonInfo'] = 'Teklif'; // Stok seçildiğinde buton bilgisini "Teklif" olarak ayarla

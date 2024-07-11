@@ -28,6 +28,8 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.0.8
   printing: ^5.13.1
+  excel: ^4.0.3
+  syncfusion_flutter_xlsio: ^26.1.41
 
 dev_dependencies:
   flutter_test:

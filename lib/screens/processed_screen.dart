@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'processed_pdf.dart'; // PDF oluşturma dosyasını ekliyoruz
+import 'processed_excel.dart'; // Excel oluşturma dosyasını ekliyoruz
 
 class ProcessedWidget extends StatefulWidget {
   final String customerName;
@@ -305,6 +307,27 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                       DataCell(Container()),
                     ]),
                   ]),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      ProcessedPDF.generateProcessedPDF(item['products'], widget.customerName);
+                    },
+                    child: Text('PDF\'e Çevir'),
+                  ),
+                  SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () {
+                      ProcessedExcel.generateProcessedExcel(item['products'], widget.customerName);
+                    },
+                    child: Text('Excel\'e Çevir'),
+                  ),
+                ],
               ),
             ),
           ],

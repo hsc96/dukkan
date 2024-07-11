@@ -7,8 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ProductsPDF {
-  static Future<void> generateProductsPDF(List<Map<String, dynamic>> products, bool selectedOnly) async {
+class ProcessedPDF {
+  static Future<void> generateProcessedPDF(List<Map<String, dynamic>> products, String customerName) async {
     if (products.isEmpty) {
       print('PDF oluşturulurken hata: Ürün listesi boş.');
       return;
@@ -24,8 +24,6 @@ class ProductsPDF {
     double total = products.fold(0, (sum, item) => sum + (double.tryParse(item['Toplam Fiyat'].toString()) ?? 0.0));
     double vat = total * 0.20;
     double grandTotal = total + vat;
-
-    String customerName = products.first['Müşteri'] ?? 'N/A';
 
     final int rowsPerPage = 20;
     int pageCount = (products.length / rowsPerPage).ceil();
@@ -81,7 +79,7 @@ class ProductsPDF {
                     _buildProductInfo(product, ttf),
                   ];
                 }).toList(),
-                cellStyle: pw.TextStyle(fontSize: 8, font: ttf),  // Tüm hücreler için yazı boyutunu 8 yapıyoruz
+                cellStyle: pw.TextStyle(fontSize: 8, font: ttf),
                 headerStyle: pw.TextStyle(fontSize: 10, font: ttf, color: PdfColors.white),
                 headerDecoration: pw.BoxDecoration(color: PdfColors.grey700),
                 border: null,
@@ -92,7 +90,7 @@ class ProductsPDF {
                   3: pw.Alignment.center,
                   4: pw.Alignment.centerRight,
                   5: pw.Alignment.centerRight,
-                  6: pw.Alignment.topLeft,  // Bilgi hücresi için hizalama
+                  6: pw.Alignment.topLeft,
                 },
               ),
               if (i == pageCount - 1) // Sadece son sayfada toplamları göster
@@ -122,7 +120,7 @@ class ProductsPDF {
 
     try {
       final output = await getTemporaryDirectory();
-      final file = File("${output.path}/faturalanacak_urunler_$formattedDate.pdf");
+      final file = File("${output.path}/islenen_urunler_$formattedDate.pdf");
       await file.writeAsBytes(await pdf.save());
       await OpenFile.open(file.path);
     } catch (e) {
