@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
+import 'products_pdf.dart';
+
 
 class ProductsWidget extends StatefulWidget {
   final String customerName;
@@ -10,7 +12,10 @@ class ProductsWidget extends StatefulWidget {
 
   @override
   _ProductsWidgetState createState() => _ProductsWidgetState();
+
+
 }
+
 
 class _ProductsWidgetState extends State<ProductsWidget> {
   List<Map<String, dynamic>> customerProducts = [];
@@ -29,11 +34,19 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   List<Map<String, dynamic>> originalProducts = [];
   bool showInfoButtons = false;
 
+
+
   @override
   void initState() {
     super.initState();
     fetchCustomerProducts();
     fetchKits();
+  }
+
+
+  void generatePDF() {
+    List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
+    ProductsPDF.generateProductsPDF(selectedProducts, true);
   }
 
   Future<void> fetchCustomerProducts() async {
@@ -913,6 +926,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -947,6 +961,18 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                   },
                   child: Text('Hepsini Seç'),
                 ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton(
+                onPressed: generatePDF,
+                child: Text('PDF Oluştur'),
+              ),
             ],
           ),
         ),

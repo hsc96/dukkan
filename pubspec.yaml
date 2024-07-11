@@ -27,6 +27,7 @@ dependencies:
   flutter_isolate: ^2.0.4
   provider: ^6.1.2
   shared_preferences: ^2.0.8
+  printing: ^5.13.1
 
 dev_dependencies:
   flutter_test:
