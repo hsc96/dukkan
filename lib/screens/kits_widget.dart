@@ -490,6 +490,7 @@ class _KitsWidgetState extends State<KitsWidget> {
           product['Alt Kit Adı'] = subKit['name'];
           product['işleme Alma Tarihi'] = currentDate;
           productsToProcess.add(product);
+          product['buttonInfo'] = 'Kit'; // Kitten gelen ürünler için buttonInfo
         }
       }
     } else {
@@ -498,6 +499,7 @@ class _KitsWidgetState extends State<KitsWidget> {
         product['Ana Kit Adı'] = mainKits[kitIndex]['name'];
         product['Alt Kit Adı'] = mainKits[kitIndex]['subKits'][subKitIndex]['name'];
         product['işleme Alma Tarihi'] = currentDate;
+        product['buttonInfo'] = 'Kit'; // Kitten gelen ürünler için buttonInfo
       }
     }
 
@@ -574,6 +576,7 @@ class _KitsWidgetState extends State<KitsWidget> {
       SnackBar(content: Text('Ürünler başarıyla işlendi')),
     );
   }
+
 
 
 

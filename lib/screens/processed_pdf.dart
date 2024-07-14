@@ -8,7 +8,7 @@ import 'package:open_file/open_file.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProcessedPDF {
-  static Future<void> generateProcessedPDF(List<Map<String, dynamic>> products, String customerName) async {
+  static Future<void> generateProcessedPDF(List<Map<String, dynamic>> products, String customerName, String processName) async {
     if (products.isEmpty) {
       print('PDF oluşturulurken hata: Ürün listesi boş.');
       return;
@@ -33,12 +33,11 @@ class ProcessedPDF {
       int end = start + rowsPerPage;
       if (end > products.length) end = products.length;
       var productsSubset = products.sublist(start, end);
-
       pdf.addPage(
         pw.Page(
           build: (pw.Context context) => pw.Column(
             children: [
-              pw.Text('Faturalanacak Ürünler - $formattedDate', style: pw.TextStyle(fontSize: 18, font: ttf)),
+              pw.Text('İşlenen Ürünler - $formattedDate - $processName', style: pw.TextStyle(fontSize: 18, font: ttf)),
               pw.Divider(color: PdfColors.black),
               pw.SizedBox(height: 16),
               pw.Row(

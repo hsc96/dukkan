@@ -316,7 +316,8 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                 children: [
                   ElevatedButton(
                     onPressed: () {
-                      ProcessedPDF.generateProcessedPDF(item['products'], widget.customerName);
+                      ProcessedPDF.generateProcessedPDF(item['products'], widget.customerName, item['name']);
+
                     },
                     child: Text('PDF\'e Çevir'),
                   ),

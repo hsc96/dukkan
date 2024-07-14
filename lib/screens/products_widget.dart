@@ -675,7 +675,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   Future<void> processSelectedProducts(String processName) async {
     var selectedProducts = selectedIndexes.map((index) {
       var product = customerProducts[index];
-      product['buttonInfo'] = 'Teklif'; // Ürünlerin buttonInfo alanını Teklif olarak ayarlayın
+      // buttonInfo değerini mevcut değeriyle koruyoruz
       return product;
     }).toList();
 
@@ -696,6 +696,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
     saveEditsToDatabase(0);
   }
+
 
 
   Widget buildInfoButton(Map<String, dynamic> product) {
