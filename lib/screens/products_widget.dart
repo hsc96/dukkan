@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
 import 'products_pdf.dart';
+import 'products_excel.dart';
 
 
 class ProductsWidget extends StatefulWidget {
@@ -42,7 +43,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     fetchCustomerProducts();
     fetchKits();
   }
-
+  void generateExcel() {
+    List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
+    ProductsExcel.generateProductsExcel(selectedProducts, widget.customerName);
+  }
 
   void generatePDF() {
     List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
@@ -970,6 +974,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
             ],
           ),
         ),
+
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
@@ -978,6 +983,11 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               ElevatedButton(
                 onPressed: generatePDF,
                 child: Text('PDF Oluştur'),
+              ),
+              SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: generateExcel,
+                child: Text('Excel\'e Çevir'),
               ),
             ],
           ),

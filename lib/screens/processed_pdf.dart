@@ -99,14 +99,7 @@ class ProcessedPDF {
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.end,
                       children: [
-                        pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.end,
-                          children: [
-                            pw.Text('MAL TOPLAMI: ${total.toStringAsFixed(2)} TL', style: pw.TextStyle(fontSize: 12, font: ttf)),
-                            pw.Text('KDV: ${vat.toStringAsFixed(2)} TL', style: pw.TextStyle(fontSize: 12, font: ttf)),
-                            pw.Text('GENEL TOPLAM: ${grandTotal.toStringAsFixed(2)} TL', style: pw.TextStyle(fontSize: 12, font: ttf)),
-                          ],
-                        ),
+
                       ],
                     ),
                   ],

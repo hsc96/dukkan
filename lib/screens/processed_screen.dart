@@ -278,35 +278,7 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                     DataCell(buildInfoButton(product)),
                   ]);
                 }).toList()
-                  ..addAll([
-                    DataRow(cells: [
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Text('Toplam Tutar')),
-                      DataCell(Text(total.toStringAsFixed(2))),
-                      DataCell(Container()),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Text('KDV %20')),
-                      DataCell(Text(vat.toStringAsFixed(2))),
-                      DataCell(Container()),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Container()),
-                      DataCell(Text('Genel Toplam')),
-                      DataCell(Text(grandTotal.toStringAsFixed(2))),
-                      DataCell(Container()),
-                    ]),
-                  ]),
+
               ),
             ),
             Padding(
