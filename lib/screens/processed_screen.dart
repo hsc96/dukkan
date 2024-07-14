@@ -324,7 +324,7 @@ class _ProcessedWidgetState extends State<ProcessedWidget> {
                   SizedBox(width: 8),
                   ElevatedButton(
                     onPressed: () {
-                      ProcessedExcel.generateProcessedExcel(item['products'], widget.customerName);
+                      ProcessedExcel.generateProcessedExcel(item['products'], widget.customerName, item['name']);
                     },
                     child: Text('Excel\'e Çevir'),
                   ),
