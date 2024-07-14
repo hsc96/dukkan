@@ -62,6 +62,13 @@ class CustomDrawer extends StatelessWidget {
               Navigator.pushNamed(context, '/zam_guncelle');
             },
           ),
+          ListTile(
+            leading: Icon(Icons.format_quote),
+            title: Text('Teklifler'),
+            onTap: () {
+              Navigator.pushNamed(context, '/quotes');
+            },
+          ),
         ],
       ),
     );

@@ -14,6 +14,7 @@ import 'screens/customers_screen.dart';
 import 'screens/customer_details_screen.dart';  // Bu satırı ekliyoruz
 import 'package:provider/provider.dart';
 import 'providers/loading_provider.dart';
+import 'screens/quotes_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +51,7 @@ class MyApp extends StatelessWidget {
           '/zam_guncelle': (context) => ZamGuncelleScreen(),
           '/customers': (context) => CustomersScreen(),
           '/customer_details': (context) => CustomerDetailsScreen(customerName: 'Example Customer'), // Bu satırı ekliyoruz
+          '/quotes': (context) => QuotesScreen(),
         },
       ),
     );
