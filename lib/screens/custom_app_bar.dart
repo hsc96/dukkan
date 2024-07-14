@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+
 import '../utils/colors.dart';
 
-class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
+class CustomAppBar extends StatefulWidget implements PreferredSizeWidget {
   final String title;
   final bool showYesterdayButton;
 
@@ -12,7 +14,88 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   }) : super(key: key);
 
   @override
+  _CustomAppBarState createState() => _CustomAppBarState();
+
+  @override
   Size get preferredSize => const Size.fromHeight(100.0);
+}
+
+class _CustomAppBarState extends State<CustomAppBar> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _offsetAnimation;
+  late Timer _initialTimer;
+  late Timer _repeatTimer;
+  bool isScrollable = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      duration: const Duration(seconds: 10),
+      vsync: this,
+    );
+
+    _offsetAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: Offset(-1.5, 0.0),
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.linear,
+    ));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkIfTextOverflow().then((overflow) {
+        if (overflow) {
+          setState(() {
+            isScrollable = true;
+          });
+          _startInitialAnimation();
+        }
+      });
+    });
+  }
+
+  Future<bool> _checkIfTextOverflow() async {
+    final textPainter = TextPainter(
+      text: TextSpan(text: widget.title, style: const TextStyle(fontSize: 20.0, fontWeight: FontWeight.w600)),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout(minWidth: 0, maxWidth: MediaQuery.of(context).size.width - 100);
+
+    return textPainter.didExceedMaxLines;
+  }
+
+  void _startInitialAnimation() {
+    _initialTimer = Timer(const Duration(seconds: 2), () {
+      _controller.forward().then((_) {
+        Future.delayed(const Duration(seconds: 2), () {
+          _controller.reset();
+          _startRepeatingAnimation();
+        });
+      });
+    });
+  }
+
+  void _startRepeatingAnimation() {
+    _repeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      _controller.forward().then((_) {
+        Future.delayed(const Duration(seconds: 2), () {
+          _controller.reset();
+        });
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _initialTimer.cancel();
+    _repeatTimer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +138,7 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (showYesterdayButton)
+                if (widget.showYesterdayButton)
                   TextButton(
                     onPressed: () {
                       Navigator.pushNamed(context, '/yesterday');
@@ -81,12 +164,33 @@ class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
                   indent: 10.0,
                   endIndent: 10.0,
                 ),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.black,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 20.0,
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: isScrollable
+                        ? SlideTransition(
+                      position: _offsetAnimation,
+                      child: Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 20.0,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                        : Center(
+                      child: Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 20.0,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
                 ),
                 const VerticalDivider(
