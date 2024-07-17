@@ -15,9 +15,10 @@ class QuotesScreen extends StatefulWidget {
 
 class _QuotesScreenState extends State<QuotesScreen> {
   List<Map<String, dynamic>> quotes = [];
-  String selectedMonth = DateFormat('MMMM').format(DateTime.now());
+  String selectedMonth = DateFormat('MMMM', 'tr_TR').format(DateTime.now());
+  int selectedYear = DateTime.now().year;
   TextEditingController orderNumberController = TextEditingController();
-  Set<int> selectedQuoteIndexes = {};
+  Set<int> selectedProductIndexes = {};
   int? selectedQuoteIndex;
 
   @override
@@ -39,57 +40,43 @@ class _QuotesScreenState extends State<QuotesScreen> {
           'products': List<Map<String, dynamic>>.from(data['products'] ?? []),
           'date': (data['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
         };
-      }).toList();
+      }).where((quote) => quote['quoteNumber'] != '').toList();
     });
   }
 
   List<Map<String, dynamic>> getQuotesForSelectedMonth() {
     return quotes.where((quote) {
-      return DateFormat('MMMM').format(quote['date']) == selectedMonth;
+      return DateFormat('MMMM', 'tr_TR').format(quote['date']) == selectedMonth && quote['date'].year == selectedYear;
     }).toList();
   }
 
   void toggleSelectAllProducts(int quoteIndex) {
     setState(() {
       var quoteProducts = quotes[quoteIndex]['products'] as List<Map<String, dynamic>>;
-      if (selectedQuoteIndexes.length == quoteProducts.length && selectedQuoteIndex == quoteIndex) {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Onaylayın'),
-              content: Text('Tüm seçimler kaldırılacak. Onaylıyor musunuz?'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: Text('İptal'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      selectedQuoteIndexes.clear();
-                      selectedQuoteIndex = null;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                  child: Text('Evet'),
-                ),
-              ],
-            );
-          },
-        );
+      if (selectedProductIndexes.length == quoteProducts.length && selectedQuoteIndex == quoteIndex) {
+        selectedProductIndexes.clear();
+        selectedQuoteIndex = null;
       } else {
-        selectedQuoteIndexes = Set<int>.from(Iterable<int>.generate(quoteProducts.length));
+        selectedProductIndexes = Set<int>.from(Iterable<int>.generate(quoteProducts.length));
         selectedQuoteIndex = quoteIndex;
       }
     });
   }
 
-  void saveQuoteAsPDF(int quoteIndex) async {
-    var quote = quotes[quoteIndex];
-    var quoteProducts = quote['products'] as List<Map<String, dynamic>>;
+  void saveQuoteAsPDF(Map<String, dynamic> quote) async {
+    if (selectedProductIndexes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lütfen ürün seçin')),
+      );
+      return;
+    }
+
+    var quoteProducts = (quote['products'] as List<Map<String, dynamic>>)
+        .asMap()
+        .entries
+        .where((entry) => selectedProductIndexes.contains(entry.key))
+        .map((entry) => entry.value)
+        .toList();
 
     double total = quoteProducts.fold(0, (sum, item) => sum + (double.tryParse(item['Toplam Fiyat'].toString()) ?? 0.0));
     double vat = total * 0.20;
@@ -126,10 +113,10 @@ class _QuotesScreenState extends State<QuotesScreen> {
     }
   }
 
-  void convertQuoteToOrder(int quoteIndex) {
-    if (selectedQuoteIndexes.isEmpty || selectedQuoteIndex != quoteIndex) {
+  void convertQuoteToOrder(Map<String, dynamic> quote) {
+    if (selectedProductIndexes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lütfen ürünleri seçin')),
+        SnackBar(content: Text('Lütfen ürün seçin')),
       );
       return;
     }
@@ -138,7 +125,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Teklif Siparişe Dönüştür'),
+          title: Text('Teklifi Siparişe Dönüştür'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -149,7 +136,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.of(context).pop();
-                  showProductDateSelectionDialog(quoteIndex);
+                  showProductDateSelectionDialog(quote);
                 },
                 child: Text('Devam Et'),
               ),
@@ -160,27 +147,29 @@ class _QuotesScreenState extends State<QuotesScreen> {
     );
   }
 
-  void showProductDateSelectionDialog(int quoteIndex) {
+  void showProductDateSelectionDialog(Map<String, dynamic> quote) {
+    var selectedProducts = (quote['products'] as List<Map<String, dynamic>>)
+        .asMap()
+        .entries
+        .where((entry) => selectedProductIndexes.contains(entry.key))
+        .map((entry) => entry.value)
+        .toList();
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return DeliveryDateForm(
-          quoteProducts: quotes[quoteIndex]['products'].where((product) {
-            return product['Adet Fiyatı'] != 'Toplam Tutar' &&
-                product['Adet Fiyatı'] != 'KDV %20' &&
-                product['Adet Fiyatı'] != 'Genel Toplam';
-          }).toList(),
+          quoteProducts: selectedProducts,
           onSave: (updatedProducts) {
-            finalizeOrderConversion(quoteIndex, updatedProducts, orderNumberController.text);
+            finalizeOrderConversion(quote, updatedProducts, orderNumberController.text);
           },
-          selectedProductIndexes: selectedQuoteIndexes,
         );
       },
     );
   }
 
-  void finalizeOrderConversion(int quoteIndex, List<Map<String, dynamic>> updatedProducts, String? orderNumber) async {
+  void finalizeOrderConversion(Map<String, dynamic> quote, List<Map<String, dynamic>> updatedProducts, String? orderNumber) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -192,7 +181,6 @@ class _QuotesScreenState extends State<QuotesScreen> {
       },
     );
 
-    var quote = quotes[quoteIndex];
     var customerName = quote['customerName'];
 
     var customerSnapshot = await FirebaseFirestore.instance
@@ -234,9 +222,9 @@ class _QuotesScreenState extends State<QuotesScreen> {
           'Toplam Fiyat': (double.tryParse(product['Adet']?.toString() ?? '0') ?? 0) *
               (double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0),
           'Teklif Numarası': quote['quoteNumber'],
-          'Teklif Tarihi': DateFormat('dd MMMM yyyy').format(quote['date']),
+          'Teklif Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(quote['date']),
           'Sipariş Numarası': orderNumber ?? 'Sipariş Numarası Girilmedi',
-          'Sipariş Tarihi': DateFormat('dd MMMM yyyy').format(DateTime.now()),
+          'Sipariş Tarihi': DateFormat('dd MMMM yyyy', 'tr_TR').format(DateTime.now()),
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
           'Müşteri': customerName,
@@ -264,7 +252,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
       }
 
       setState(() {
-        selectedQuoteIndexes.clear();
+        selectedProductIndexes.clear();
         selectedQuoteIndex = null;
       });
 
@@ -273,6 +261,36 @@ class _QuotesScreenState extends State<QuotesScreen> {
     } catch (e) {
       Navigator.of(context).pop();
       print('Veri ekleme hatası: $e');
+    }
+  }
+
+  Future<void> selectYear(BuildContext context) async {
+    int? selectedYear = await showDialog<int>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Yıl Seçin'),
+          content: Container(
+            height: 300,
+            width: 300,
+            child: YearPicker(
+              firstDate: DateTime(2020),
+              lastDate: DateTime(DateTime.now().year + 1),
+              initialDate: DateTime(this.selectedYear),
+              selectedDate: DateTime(this.selectedYear),
+              onChanged: (DateTime dateTime) {
+                Navigator.pop(context, dateTime.year);
+              },
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selectedYear != null) {
+      setState(() {
+        this.selectedYear = selectedYear;
+      });
     }
   }
 
@@ -286,20 +304,33 @@ class _QuotesScreenState extends State<QuotesScreen> {
             height: 50,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              children: List.generate(12, (index) {
-                String monthName = DateFormat('MMMM').format(DateTime(0, index + 1));
-                return Padding(
+              children: [
+                ...List.generate(12, (index) {
+                  String monthName = DateFormat('MMMM', 'tr_TR').format(DateTime(0, index + 1));
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          selectedMonth = monthName;
+                        });
+                      },
+                      child: Text(
+                        selectedYear == DateTime.now().year ? monthName : '$monthName $selectedYear',
+                      ),
+                    ),
+                  );
+                }),
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: ElevatedButton(
                     onPressed: () {
-                      setState(() {
-                        selectedMonth = monthName;
-                      });
+                      selectYear(context);
                     },
-                    child: Text(monthName),
+                    child: Text('Yıl Seç'),
                   ),
-                );
-              }),
+                ),
+              ],
             ),
           ),
           Expanded(
@@ -309,7 +340,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
                 var quote = getQuotesForSelectedMonth()[index];
                 return ExpansionTile(
                   title: Text('Teklif No: ${quote['quoteNumber']} - ${quote['customerName']}'),
-                  subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy').format(quote['date'])}'),
+                  subtitle: Text('Tarih: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(quote['date'])}'),
                   children: [
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -333,15 +364,15 @@ class _QuotesScreenState extends State<QuotesScreen> {
                             DataCell(
                               !isTotalRow
                                   ? Checkbox(
-                                value: selectedQuoteIndexes.contains(productIndex) && selectedQuoteIndex == index,
+                                value: selectedProductIndexes.contains(productIndex) && selectedQuoteIndex == index,
                                 onChanged: (bool? value) {
                                   setState(() {
                                     if (value == true) {
-                                      selectedQuoteIndexes.add(productIndex);
+                                      selectedProductIndexes.add(productIndex);
                                       selectedQuoteIndex = index;
                                     } else {
-                                      selectedQuoteIndexes.remove(productIndex);
-                                      if (selectedQuoteIndexes.isEmpty) {
+                                      selectedProductIndexes.remove(productIndex);
+                                      if (selectedProductIndexes.isEmpty) {
                                         selectedQuoteIndex = null;
                                       }
                                     }
@@ -361,28 +392,29 @@ class _QuotesScreenState extends State<QuotesScreen> {
                       ),
                     ),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton(
                           onPressed: () {
-                            toggleSelectAllProducts(index);
+                            saveQuoteAsPDF(quote);
                           },
-                          child: Text(
-                            selectedQuoteIndexes.length == quotes[index]['products'].length && selectedQuoteIndex == index
-                                ? 'Seçimleri Kaldır'
-                                : 'Hepsini Seç',
-                          ),
+                          child: Text('PDF\'ye Dönüştür'),
                         ),
                         TextButton(
                           onPressed: () {
-                            convertQuoteToOrder(index);
+                            convertQuoteToOrder(quote);
                           },
                           child: Text('Siparişe Dönüştür'),
                         ),
                         TextButton(
                           onPressed: () {
-                            saveQuoteAsPDF(index);
+                            toggleSelectAllProducts(index);
                           },
-                          child: Text('PDF\'e Dönüştür'),
+                          child: Text(
+                            selectedProductIndexes.length == (quote['products'] as List).length && selectedQuoteIndex == index
+                                ? 'Seçimleri Kaldır'
+                                : 'Hepsini Seç',
+                          ),
                         ),
                       ],
                     ),
@@ -393,7 +425,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: CustomBottomBar(), // Alt navigasyon çubuğunu ekleyelim
+      bottomNavigationBar: CustomBottomBar(),
     );
   }
 }
@@ -401,9 +433,8 @@ class _QuotesScreenState extends State<QuotesScreen> {
 class DeliveryDateForm extends StatefulWidget {
   final List<Map<String, dynamic>> quoteProducts;
   final Function(List<Map<String, dynamic>>) onSave;
-  final Set<int> selectedProductIndexes;
 
-  DeliveryDateForm({required this.quoteProducts, required this.onSave, required this.selectedProductIndexes});
+  DeliveryDateForm({required this.quoteProducts, required this.onSave});
 
   @override
   _DeliveryDateFormState createState() => _DeliveryDateFormState();
@@ -415,10 +446,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
   @override
   void initState() {
     super.initState();
-    updatedProducts = widget.quoteProducts.where((product) {
-      int productIndex = widget.quoteProducts.indexOf(product);
-      return widget.selectedProductIndexes.contains(productIndex);
-    }).toList();
+    updatedProducts = widget.quoteProducts;
   }
 
   @override
@@ -459,8 +487,8 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                         },
                         child: Text(
                           deliveryDate != null
-                              ? 'Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'
-                              : 'Select Delivery Date',
+                              ? 'Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'
+                              : 'Teslim Tarihi Seç',
                         ),
                       ),
                       Checkbox(
@@ -474,13 +502,13 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                           });
                         },
                       ),
-                      Text('Is this product in stock?'),
+                      Text('Bu ürün stokta mı?'),
                     ],
                   ),
                   if (product['isStock'] == true)
-                    Text('This product is in stock.')
+                    Text('Bu ürün stokta.')
                   else if (deliveryDate != null)
-                    Text('Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
+                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy', 'tr_TR').format(deliveryDate)}'),
                 ],
               ),
             );
@@ -493,7 +521,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
             widget.onSave(updatedProducts);
             Navigator.of(context).pop(); // Dialog'u kapatma
           },
-          child: Text('Save'),
+          child: Text('Kaydet'),
         ),
       ],
     );
