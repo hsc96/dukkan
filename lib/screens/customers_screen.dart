@@ -10,6 +10,7 @@ import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import '../providers/loading_provider.dart';
 import 'customer_details_screen.dart';
+import 'update_all_documents.dart';
 
 class CustomersScreen extends StatefulWidget {
   @override
@@ -27,6 +28,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
   final ScrollController scrollController = ScrollController();
   bool showFetchButton = false;
   bool isFetchingAdditionalCustomers = false;
+  bool isSearching = false;
+
 
   @override
   void initState() {
@@ -36,18 +39,34 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
     scrollController.addListener(() {
       if (scrollController.position.atEdge) {
-        if (scrollController.position.pixels != 0 && !isFetchingAdditionalCustomers) {
+        if (scrollController.position.pixels != 0) {
           fetchAdditionalCustomers();
         }
       }
     });
+
+    searchController.addListener(() {
+      if (searchController.text.isEmpty) {
+        setState(() {
+          isSearching = false;
+          filteredCustomers = customers.map((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            return {
+              'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+              'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+            };
+          }).toList();
+        });
+      } else {
+        searchCustomers(searchController.text);
+      }
+    });
   }
 
-  @override
-  void dispose() {
-    scrollController.dispose();
-    super.dispose();
-  }
+
+
+
+
 
   Future<void> fetchInitialCustomers() async {
     try {
@@ -56,8 +75,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           .limit(15)
           .get();
 
-      var docs = querySnapshot.docs;
-      var descriptions = docs.map((doc) {
+      var descriptions = querySnapshot.docs.map((doc) {
         var data = doc.data() as Map<String, dynamic>;
         return {
           'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
@@ -66,7 +84,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       }).toList();
 
       setState(() {
-        customers = docs;
+        customers = querySnapshot.docs; // DocumentSnapshot tipini sakla
         filteredCustomers = descriptions;
         showFetchButton = customers.length < 15;
       });
@@ -80,32 +98,57 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
+
+
+
+
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    searchController.dispose();
+    super.dispose();
+  }
+
+
   Future<void> fetchAdditionalCustomers([int count = 20]) async {
     if (isFetchingAdditionalCustomers) return;
+
     setState(() {
       isFetchingAdditionalCustomers = true;
     });
+
     try {
       var customerDetailsCollection = FirebaseFirestore.instance.collection('veritabanideneme');
+      QuerySnapshot querySnapshot;
 
-      // Rastgele veritabanideneme koleksiyonundan veri getir
-      QuerySnapshot<Map<String, dynamic>> additionalCustomersSnapshot;
       if (customers.isNotEmpty) {
-        additionalCustomersSnapshot = await customerDetailsCollection
-            .orderBy(FieldPath.documentId)
-            .startAfterDocument(customers.last)
+        var lastDocument = customers.last as DocumentSnapshot;
+        querySnapshot = await customerDetailsCollection
+            .orderBy('AçıklamaLowerCase')
+            .startAfterDocument(lastDocument)
             .limit(count)
             .get();
       } else {
-        additionalCustomersSnapshot = await customerDetailsCollection
-            .orderBy(FieldPath.documentId)
+        querySnapshot = await customerDetailsCollection
+            .orderBy('AçıklamaLowerCase')
             .limit(count)
             .get();
       }
 
-      if (additionalCustomersSnapshot.docs.isNotEmpty) {
-        _addCustomersToList(additionalCustomersSnapshot.docs);
-      }
+      var additionalCustomers = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      setState(() {
+        customers.addAll(querySnapshot.docs);
+        filteredCustomers.addAll(additionalCustomers);
+        isFetchingAdditionalCustomers = false;
+      });
     } catch (e) {
       print('Error fetching additional customers: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -113,12 +156,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
           content: Text('Ek müşteri verileri alınamadı: $e'),
         ),
       );
-    } finally {
       setState(() {
         isFetchingAdditionalCustomers = false;
       });
     }
   }
+
+
 
   void _addCustomersToList(List<DocumentSnapshot> docs) {
     setState(() {
@@ -144,6 +188,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     });
   }
 
+
   Future<void> fetchDiscountLevels() async {
     var querySnapshot = await FirebaseFirestore.instance.collection('iskonto').get();
     if (querySnapshot.docs.isNotEmpty) {
@@ -154,17 +199,80 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
-  void filterCustomers(String query) {
-    setState(() {
-      filteredCustomers = customers.map((doc) {
+  Future<void> updateAllDocuments() async {
+    var collection = FirebaseFirestore.instance.collection('veritabanideneme');
+    var querySnapshot = await collection.get();
+
+    for (var doc in querySnapshot.docs) {
+      var data = doc.data();
+      String aciklama = data['Açıklama'] ?? '';
+      await doc.reference.update({
+        'AçıklamaLowerCase': aciklama.toLowerCase(),
+      });
+    }
+  }
+
+
+
+  Future<void> searchCustomers(String query) async {
+    String lowerCaseQuery = query.toLowerCase();
+
+    try {
+      // Veritabanında arama yap
+      var querySnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('AçıklamaLowerCase', isGreaterThanOrEqualTo: lowerCaseQuery)
+          .where('AçıklamaLowerCase', isLessThanOrEqualTo: lowerCaseQuery + '\uf8ff')
+          .get();
+
+      var descriptions = querySnapshot.docs.map((doc) {
         var data = doc.data() as Map<String, dynamic>;
         return {
           'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
           'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
         };
-      }).where((customer) => customer['Açıklama'].toLowerCase().contains(query.toLowerCase())).toList();
-    });
+      }).toList();
+
+      // Mevcut listede arama yap
+      var localResults = customers.where((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        String aciklama = data['Açıklama'] ?? '';
+        return aciklama.toLowerCase().contains(lowerCaseQuery);
+      }).map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      setState(() {
+        filteredCustomers = [
+          ...descriptions,
+          ...localResults.where((localDoc) => !descriptions.any((desc) => desc['Açıklama'] == localDoc['Açıklama']))
+        ];
+      });
+    } catch (e) {
+      print('Error searching customers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Müşteri araması başarısız: $e'),
+        ),
+      );
+    }
   }
+
+
+
+
+
+
+
+
+
+
+
+
 
   void sortCustomers(int columnIndex, bool ascending) {
     if (columnIndex == 0) {
@@ -343,7 +451,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 Expanded(
                   child: TextField(
                     controller: searchController,
-                    onChanged: (query) => filterCustomers(query),
+                    onSubmitted: (query) {
+                      setState(() {
+                        isSearching = true;
+                      });
+                      searchCustomers(query);
+                    },
                     decoration: InputDecoration(
                       hintText: 'Müşteri ara...',
                       border: OutlineInputBorder(
@@ -359,6 +472,17 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 IconButton(
                   icon: Icon(Icons.add, color: colorTheme5),
                   onPressed: pickJsonFile,
+                ),
+                IconButton(
+                  icon: Icon(Icons.update, color: colorTheme5),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => UpdateAllDocumentsScreen(),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -382,7 +506,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ),
           Expanded(
             child: SingleChildScrollView(
-              controller: scrollController, // ScrollController'ı burada ekleyelim
+              controller: scrollController,
               scrollDirection: Axis.vertical,
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
