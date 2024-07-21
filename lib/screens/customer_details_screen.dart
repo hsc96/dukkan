@@ -22,6 +22,13 @@ class CustomerDetailsScreen extends StatefulWidget {
 
 class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
   int currentIndex = 0;
+  double genelToplam = 0.0; // Toplam tutar için değişken
+
+  void updateGenelToplam(double total) {
+    setState(() {
+      genelToplam = total;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,11 +68,27 @@ class _CustomerDetailsScreenState extends State<CustomerDetailsScreen> {
               ),
             ],
           ),
-          if (currentIndex == 0) Expanded(child: ProductsWidget(customerName: widget.customerName)),
+          if (currentIndex == 0)
+            Expanded(
+              child: ProductsWidget(
+                customerName: widget.customerName,
+                onTotalUpdated: updateGenelToplam,
+              ),
+            ),
           if (currentIndex == 1) Expanded(child: KitsWidget(customerName: widget.customerName)),
           if (currentIndex == 2) Expanded(child: QuotesWidget(customerName: widget.customerName)),
           if (currentIndex == 3) Expanded(child: ProcessedWidget(customerName: widget.customerName)),
           if (currentIndex == 4) Expanded(child: CustomerExpectedProductsWidget(customerName: widget.customerName)),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Genel Toplam:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text('${genelToplam.toStringAsFixed(2)} TL', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),

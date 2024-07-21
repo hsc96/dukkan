@@ -14,8 +14,9 @@ import 'package:intl/intl.dart'; // Tarih formatı için eklenmiştir.
 import 'package:path_provider/path_provider.dart'; // Dosya yolları için
 import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
 import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
-import 'pdf_template.dart'; // PDF şablonu için
+import 'pdf_sales_template.dart'; // PDF şablonu için
 import 'customer_details_screen.dart'; // Müşteri detayları ekranını import et
+
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -538,36 +539,12 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<void> saveAsPDF() async {
-    // Kullanıcıdan teslim tarihi ve teklif süresi bilgilerini alın
-    String teslimTarihi = await _selectDate(context);
-    String teklifSuresi = await _selectOfferDuration(context);
-
-    // Teklif numarası ve tarihini belirle
-    String quoteNumber = "CSK20240001"; // Bu örnekte sabit bir numara kullanılıyor, dinamik olarak da alınabilir
-    DateTime quoteDate = DateTime.now(); // Teklif tarihi şu anki zaman
-
-    final pdf = await PDFTemplate.generateQuote(
+    await PDFSalesTemplate.generateSalesPDF(
+      scannedProducts,
       selectedCustomer!,
-      scannedProducts.cast<Map<String, dynamic>>(),
-      toplamTutar,
-      kdv,
-      genelToplam,
-      teslimTarihi,
-      teklifSuresi,
-      quoteNumber, // Yeni parametre
-      quoteDate, // Yeni parametre
+      false,
     );
-
-    try {
-      final output = await getTemporaryDirectory();
-      final file = File("${output.path}/${selectedCustomer}_fiyat_teklifi.pdf");
-      await file.writeAsBytes(await pdf.save());
-      await OpenFile.open(file.path);
-    } catch (e) {
-      print('PDF kaydedilirken hata oluştu: $e');
-    }
   }
-
 
   Future<String> _selectDate(BuildContext context) async {
     DateTime selectedDate = DateTime.now();
@@ -883,7 +860,7 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            padding: const EdgeInsets.symmetric(vertical: 5.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -894,7 +871,13 @@ class _ScanScreenState extends State<ScanScreen> {
                 ElevatedButton(
                   onPressed: showProcessingDialog, // Hesaba işle fonksiyonunu burada tanımladık
                   child: Text('Hesaba İşle'),
+
                 ),
+            ElevatedButton(
+              onPressed: saveAsPDF,
+              child: Text('PDF\'e Dönüştür'),
+
+            ),
               ],
             ),
           ),

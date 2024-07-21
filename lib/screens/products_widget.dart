@@ -8,15 +8,13 @@ import 'products_excel.dart';
 
 class ProductsWidget extends StatefulWidget {
   final String customerName;
+  final Function(double) onTotalUpdated; // Yeni eklenen parametre
 
-  ProductsWidget({required this.customerName});
+  ProductsWidget({required this.customerName, required this.onTotalUpdated}); // Yeni parametre eklendi
 
   @override
   _ProductsWidgetState createState() => _ProductsWidgetState();
-
-
 }
-
 
 class _ProductsWidgetState extends State<ProductsWidget> {
   List<Map<String, dynamic>> customerProducts = [];
@@ -190,8 +188,29 @@ class _ProductsWidgetState extends State<ProductsWidget> {
         'Adet Fiyatı': 'Genel Toplam',
         'Toplam Fiyat': genelToplam.toStringAsFixed(2),
       });
+
+      // Firestore'a faturası kesilecek tutar güncelleme
+      var customerRef = FirebaseFirestore.instance
+          .collection('customerDetails')
+          .where('customerName', isEqualTo: widget.customerName)
+          .limit(1);
+      customerRef.get().then((querySnapshot) {
+        if (querySnapshot.docs.isNotEmpty) {
+          var docRef = querySnapshot.docs.first.reference;
+          docRef.update({
+            'genelToplamTutar': genelToplam,
+          }).catchError((error) {
+            print('Genel Toplam güncellenirken hata oluştu: $error');
+          });
+        }
+      }).catchError((error) {
+        print('Müşteri bilgisi alınırken hata oluştu: $error');
+      });
     });
   }
+
+
+
 
   Future<void> saveEditsToDatabase(int index) async {
     var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
