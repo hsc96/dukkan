@@ -11,6 +11,7 @@ import 'custom_drawer.dart';
 import '../providers/loading_provider.dart';
 import 'customer_details_screen.dart';
 import 'update_all_documents.dart';
+import 'search_service.dart'; // Yeni dosyayı import ediyoruz
 
 class CustomersScreen extends StatefulWidget {
   @override
@@ -30,11 +31,9 @@ class _CustomersScreenState extends State<CustomersScreen> {
   bool isFetchingAdditionalCustomers = false;
   bool isSearching = false;
 
-
   @override
   void initState() {
     super.initState();
-    fetchInitialCustomers();
     fetchDiscountLevels();
 
     scrollController.addListener(() {
@@ -58,50 +57,17 @@ class _CustomersScreenState extends State<CustomersScreen> {
           }).toList();
         });
       } else {
-        searchCustomers(searchController.text);
+        searchAndSetCustomers(searchController.text);
       }
     });
   }
 
-
-
-
-
-
-  Future<void> fetchInitialCustomers() async {
-    try {
-      var querySnapshot = await FirebaseFirestore.instance
-          .collection('veritabanideneme')
-          .limit(15)
-          .get();
-
-      var descriptions = querySnapshot.docs.map((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        return {
-          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
-          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
-        };
-      }).toList();
-
-      setState(() {
-        customers = querySnapshot.docs; // DocumentSnapshot tipini sakla
-        filteredCustomers = descriptions;
-        showFetchButton = customers.length < 15;
-      });
-    } catch (e) {
-      print('Error fetching initial customers: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Müşteri verileri alınamadı: $e'),
-        ),
-      );
-    }
+  Future<void> searchAndSetCustomers(String query) async {
+    var results = await searchCustomers(query, customers);
+    setState(() {
+      filteredCustomers = results;
+    });
   }
-
-
-
-
-
 
   @override
   void dispose() {
@@ -109,7 +75,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
     searchController.dispose();
     super.dispose();
   }
-
 
   Future<void> fetchAdditionalCustomers([int count = 20]) async {
     if (isFetchingAdditionalCustomers) return;
@@ -162,8 +127,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
-
-
   void _addCustomersToList(List<DocumentSnapshot> docs) {
     setState(() {
       var newCustomerData = docs.map((doc) {
@@ -188,7 +151,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
     });
   }
 
-
   Future<void> fetchDiscountLevels() async {
     var querySnapshot = await FirebaseFirestore.instance.collection('iskonto').get();
     if (querySnapshot.docs.isNotEmpty) {
@@ -211,68 +173,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
       });
     }
   }
-
-
-
-  Future<void> searchCustomers(String query) async {
-    String lowerCaseQuery = query.toLowerCase();
-
-    try {
-      // Veritabanında arama yap
-      var querySnapshot = await FirebaseFirestore.instance
-          .collection('veritabanideneme')
-          .where('AçıklamaLowerCase', isGreaterThanOrEqualTo: lowerCaseQuery)
-          .where('AçıklamaLowerCase', isLessThanOrEqualTo: lowerCaseQuery + '\uf8ff')
-          .get();
-
-      var descriptions = querySnapshot.docs.map((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        return {
-          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
-          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
-        };
-      }).toList();
-
-      // Mevcut listede arama yap
-      var localResults = customers.where((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        String aciklama = data['Açıklama'] ?? '';
-        return aciklama.toLowerCase().contains(lowerCaseQuery);
-      }).map((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        return {
-          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
-          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
-        };
-      }).toList();
-
-      setState(() {
-        filteredCustomers = [
-          ...descriptions,
-          ...localResults.where((localDoc) => !descriptions.any((desc) => desc['Açıklama'] == localDoc['Açıklama']))
-        ];
-      });
-    } catch (e) {
-      print('Error searching customers: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Müşteri araması başarısız: $e'),
-        ),
-      );
-    }
-  }
-
-
-
-
-
-
-
-
-
-
-
-
 
   void sortCustomers(int columnIndex, bool ascending) {
     if (columnIndex == 0) {
@@ -342,6 +242,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
       var query = await collection.where('Kodu', isEqualTo: code).get();
 
       if (query.docs.isEmpty) {
+        // AçıklamaLowerCase alanını ekliyoruz
+        newCustomer['AçıklamaLowerCase'] = (newCustomer['Açıklama'] ?? '').toLowerCase();
         await collection.add(newCustomer);
         addedCount++;
         newCustomers.add(newCustomer);
@@ -349,8 +251,6 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
       Provider.of<LoadingProvider>(context, listen: false).updateProgress((i + 1) / newCustomersList.length);
     }
-
-    fetchInitialCustomers(); // Yeni müşteri listesini almak için çağır
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -455,7 +355,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       setState(() {
                         isSearching = true;
                       });
-                      searchCustomers(query);
+                      searchAndSetCustomers(query);
                     },
                     decoration: InputDecoration(
                       hintText: 'Müşteri ara...',
@@ -505,49 +405,76 @@ class _CustomersScreenState extends State<CustomersScreen> {
             },
           ),
           Expanded(
-            child: SingleChildScrollView(
-              controller: scrollController,
-              scrollDirection: Axis.vertical,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Column(
-                  children: [
-                    DataTable(
-                      columns: [
-                        DataColumn(
-                          label: Text('FATURA KESİLECEK TUTAR'),
-                          onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
-                        ),
-                        DataColumn(
-                          label: Text('MÜŞTERİ'),
-                          onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
-                        ),
-                      ],
-                      rows: filteredCustomers.map((customer) {
-                        return DataRow(cells: [
-                          DataCell(Text(customer['Fatura Kesilecek Tutar'].toString())),
-                          DataCell(
-                            Text(customer['Açıklama']),
-                            onTap: () => navigateToCustomerDetails(customer['Açıklama']),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('veritabanideneme').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return Center(child: Text('Bir hata oluştu: ${snapshot.error}'));
+                }
+
+                var data = snapshot.data;
+                if (data != null) {
+                  var documents = data.docs;
+
+                  customers = documents;
+                  filteredCustomers = documents.map((doc) {
+                    var data = doc.data() as Map<String, dynamic>;
+                    return {
+                      'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+                      'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+                    };
+                  }).toList();
+
+                  return SingleChildScrollView(
+                    controller: scrollController,
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Column(
+                        children: [
+                          DataTable(
+                            columns: [
+                              DataColumn(
+                                label: Text('FATURA KESİLECEK TUTAR'),
+                                onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
+                              ),
+                              DataColumn(
+                                label: Text('MÜŞTERİ'),
+                                onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
+                              ),
+                            ],
+                            rows: filteredCustomers.map((customer) {
+                              return DataRow(cells: [
+                                DataCell(Text(customer['Fatura Kesilecek Tutar'].toString())),
+                                DataCell(
+                                  Text(customer['Açıklama']),
+                                  onTap: () => navigateToCustomerDetails(customer['Açıklama']),
+                                ),
+                              ]);
+                            }).toList(),
                           ),
-                        ]);
-                      }).toList(),
-                    ),
-                    if (showFetchButton)
-                      Center(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              showFetchButton = false;
-                            });
-                            fetchAdditionalCustomers(20);
-                          },
-                          child: Text('Müşteri Getir'),
-                        ),
+                          if (showFetchButton)
+                            Center(
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    showFetchButton = false;
+                                  });
+                                  fetchAdditionalCustomers(20);
+                                },
+                                child: Text('Müşteri Getir'),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
-                ),
-              ),
+                    ),
+                  );
+                } else {
+                  return Center(child: Text('Veri bulunamadı.'));
+                }
+              },
             ),
           ),
         ],

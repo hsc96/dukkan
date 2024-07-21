@@ -191,14 +191,15 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
       // Firestore'a faturası kesilecek tutar güncelleme
       var customerRef = FirebaseFirestore.instance
-          .collection('customerDetails')
-          .where('customerName', isEqualTo: widget.customerName)
+          .collection('veritabanideneme')
+          .where('Açıklama', isEqualTo: widget.customerName)
           .limit(1);
+
       customerRef.get().then((querySnapshot) {
         if (querySnapshot.docs.isNotEmpty) {
           var docRef = querySnapshot.docs.first.reference;
           docRef.update({
-            'genelToplamTutar': genelToplam,
+            'Fatura Kesilecek Tutar': genelToplam,
           }).catchError((error) {
             print('Genel Toplam güncellenirken hata oluştu: $error');
           });
@@ -208,6 +209,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       });
     });
   }
+
 
 
 
