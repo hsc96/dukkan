@@ -20,9 +20,16 @@ class _UpdateAllDocumentsScreenState extends State<UpdateAllDocumentsScreen> {
     for (var doc in querySnapshot.docs) {
       var data = doc.data();
       String aciklama = data['Açıklama'] ?? '';
-      await doc.reference.update({
+      Map<String, dynamic> updates = {
         'AçıklamaLowerCase': aciklama.toLowerCase(),
-      });
+      };
+
+      // Eğer Fatura Kesilecek Tutar alanı yoksa ekle
+      if (!data.containsKey('Fatura Kesilecek Tutar')) {
+        updates['Fatura Kesilecek Tutar'] = 0.0;
+      }
+
+      await doc.reference.update(updates);
     }
 
     setState(() {

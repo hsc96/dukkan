@@ -11,7 +11,6 @@ import 'custom_drawer.dart';
 import '../providers/loading_provider.dart';
 import 'customer_details_screen.dart';
 import 'update_all_documents.dart';
-import 'search_service.dart'; // Yeni dosyayı import ediyoruz
 
 class CustomersScreen extends StatefulWidget {
   @override
@@ -30,10 +29,13 @@ class _CustomersScreenState extends State<CustomersScreen> {
   bool showFetchButton = false;
   bool isFetchingAdditionalCustomers = false;
   bool isSearching = false;
+  double totalInvoiceAmount = 0;
+
 
   @override
   void initState() {
     super.initState();
+    fetchInitialCustomers();
     fetchDiscountLevels();
 
     scrollController.addListener(() {
@@ -57,17 +59,89 @@ class _CustomersScreenState extends State<CustomersScreen> {
           }).toList();
         });
       } else {
-        searchAndSetCustomers(searchController.text);
+        searchCustomers(searchController.text);
       }
     });
   }
 
-  Future<void> searchAndSetCustomers(String query) async {
-    var results = await searchCustomers(query, customers);
-    setState(() {
-      filteredCustomers = results;
-    });
+
+  Future<void> fetchInitialCustomers() async {
+    try {
+      var querySnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('Fatura Kesilecek Tutar', isGreaterThan: 0)
+          .orderBy('Fatura Kesilecek Tutar', descending: true)
+          .limit(50)
+          .get();
+
+      var descriptions = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      double totalAmount = querySnapshot.docs.fold(0.0, (sum, doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return sum + (data['Fatura Kesilecek Tutar'] ?? 0.0);
+      });
+
+      setState(() {
+        customers = querySnapshot.docs; // DocumentSnapshot tipini sakla
+        filteredCustomers = descriptions;
+        totalInvoiceAmount = double.parse(totalAmount.toStringAsFixed(3));
+      });
+
+      if (customers.length < 50) {
+        await fetchAdditionalAlphabeticalCustomers(50 - customers.length);
+      }
+
+      showFetchButton = customers.length < 50;
+    } catch (e) {
+      print('Error fetching initial customers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Müşteri verileri alınamadı: $e'),
+        ),
+      );
+    }
   }
+
+
+  Future<void> fetchAdditionalAlphabeticalCustomers(int count) async {
+    try {
+      var querySnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .orderBy('AçıklamaLowerCase')
+          .limit(count)
+          .get();
+
+      var descriptions = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      setState(() {
+        customers.addAll(querySnapshot.docs);
+        filteredCustomers.addAll(descriptions);
+      });
+    } catch (e) {
+      print('Error fetching additional alphabetical customers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Alfabetik müşteri verileri alınamadı: $e'),
+        ),
+      );
+    }
+  }
+
+
+
+
 
   @override
   void dispose() {
@@ -75,6 +149,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     searchController.dispose();
     super.dispose();
   }
+
 
   Future<void> fetchAdditionalCustomers([int count = 20]) async {
     if (isFetchingAdditionalCustomers) return;
@@ -89,16 +164,36 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
       if (customers.isNotEmpty) {
         var lastDocument = customers.last as DocumentSnapshot;
+
+        // Fatura Kesilecek Tutar'ı olan müşterileri getir
         querySnapshot = await customerDetailsCollection
-            .orderBy('AçıklamaLowerCase')
+            .where('Fatura Kesilecek Tutar', isGreaterThan: 0)
+            .orderBy('Fatura Kesilecek Tutar', descending: true)
             .startAfterDocument(lastDocument)
             .limit(count)
             .get();
+
+        if (querySnapshot.docs.isEmpty) {
+          // Eğer yeterli veri yoksa, alfabetik olarak diğer verileri getir
+          querySnapshot = await customerDetailsCollection
+              .orderBy('AçıklamaLowerCase')
+              .startAfterDocument(lastDocument)
+              .limit(count)
+              .get();
+        }
       } else {
         querySnapshot = await customerDetailsCollection
-            .orderBy('AçıklamaLowerCase')
+            .where('Fatura Kesilecek Tutar', isGreaterThan: 0)
+            .orderBy('Fatura Kesilecek Tutar', descending: true)
             .limit(count)
             .get();
+
+        if (querySnapshot.docs.isEmpty) {
+          querySnapshot = await customerDetailsCollection
+              .orderBy('AçıklamaLowerCase')
+              .limit(count)
+              .get();
+        }
       }
 
       var additionalCustomers = querySnapshot.docs.map((doc) {
@@ -109,9 +204,15 @@ class _CustomersScreenState extends State<CustomersScreen> {
         };
       }).toList();
 
+      double totalAmount = querySnapshot.docs.fold(0.0, (sum, doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return sum + (data['Fatura Kesilecek Tutar'] ?? 0.0);
+      });
+
       setState(() {
         customers.addAll(querySnapshot.docs);
         filteredCustomers.addAll(additionalCustomers);
+        totalInvoiceAmount = double.parse(totalAmount.toStringAsFixed(3));
         isFetchingAdditionalCustomers = false;
       });
     } catch (e) {
@@ -127,6 +228,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
+
+
+
+
+
+
   void _addCustomersToList(List<DocumentSnapshot> docs) {
     setState(() {
       var newCustomerData = docs.map((doc) {
@@ -137,7 +244,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
         };
       }).toList();
 
-      customers.addAll(docs.where((newCustomer) => !customers.any((existingCustomer) =>
+      customers.addAll(docs.where((newCustomer) =>
+      !customers.any((existingCustomer) =>
       existingCustomer.id == newCustomer.id
       )));
 
@@ -151,12 +259,16 @@ class _CustomersScreenState extends State<CustomersScreen> {
     });
   }
 
+
   Future<void> fetchDiscountLevels() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection('iskonto').get();
+    var querySnapshot = await FirebaseFirestore.instance.collection('iskonto')
+        .get();
     if (querySnapshot.docs.isNotEmpty) {
       var data = querySnapshot.docs.first.data();
       setState(() {
-        discountLevels = data.keys.where((key) => key != 'a_seviye' && key != 'b_seviye' && key != 'c_seviye').toList();
+        discountLevels =
+            data.keys.where((key) => key != 'a_seviye' && key != 'b_seviye' &&
+                key != 'c_seviye').toList();
       });
     }
   }
@@ -174,20 +286,121 @@ class _CustomersScreenState extends State<CustomersScreen> {
     }
   }
 
+
+  Future<void> searchCustomers(String query) async {
+    String lowerCaseQuery = query.toLowerCase();
+
+    try {
+      // Veritabanında arama yap
+      var querySnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('AçıklamaLowerCase', isGreaterThanOrEqualTo: lowerCaseQuery)
+          .where(
+          'AçıklamaLowerCase', isLessThanOrEqualTo: lowerCaseQuery + '\uf8ff')
+          .get();
+
+      var descriptions = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      // Mevcut listede arama yap
+      var localResults = customers.where((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        String aciklama = data['Açıklama'] ?? '';
+        return aciklama.toLowerCase().contains(lowerCaseQuery);
+      }).map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      setState(() {
+        filteredCustomers = [
+          ...descriptions,
+          ...localResults.where((localDoc) =>
+          !descriptions.any((desc) => desc['Açıklama'] == localDoc['Açıklama']))
+        ];
+      });
+    } catch (e) {
+      print('Error searching customers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Müşteri araması başarısız: $e'),
+        ),
+      );
+    }
+  }
+  Future<void> fetchSortedCustomers(bool ascending) async {
+    setState(() {
+      isFetchingAdditionalCustomers = true;
+      customers.clear();
+      filteredCustomers.clear();
+    });
+
+    try {
+      var customerDetailsCollection = FirebaseFirestore.instance.collection('veritabanideneme');
+      QuerySnapshot querySnapshot;
+
+      querySnapshot = await customerDetailsCollection
+          .orderBy('Fatura Kesilecek Tutar', descending: !ascending)
+          .limit(50)
+          .get();
+
+      var sortedCustomers = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      double totalAmount = querySnapshot.docs.fold(0.0, (sum, doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return sum + (data['Fatura Kesilecek Tutar'] ?? 0.0);
+      });
+
+      setState(() {
+        customers = querySnapshot.docs;
+        filteredCustomers = sortedCustomers;
+        totalInvoiceAmount = double.parse(totalAmount.toStringAsFixed(3));
+        isFetchingAdditionalCustomers = false;
+      });
+    } catch (e) {
+      print('Error fetching sorted customers: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Sıralı müşteri verileri alınamadı: $e'),
+        ),
+      );
+      setState(() {
+        isFetchingAdditionalCustomers = false;
+      });
+    }
+  }
+
+
+
+
   void sortCustomers(int columnIndex, bool ascending) {
     if (columnIndex == 0) {
       filteredCustomers.sort((a, b) =>
       ascending ? a['Açıklama'].compareTo(b['Açıklama']) : b['Açıklama'].compareTo(a['Açıklama']));
+      setState(() {
+        sortColumnIndex = columnIndex;
+        isAscending = ascending;
+      });
     } else if (columnIndex == 1) {
-      filteredCustomers.sort((a, b) => ascending
-          ? a['Fatura Kesilecek Tutar'].compareTo(b['Fatura Kesilecek Tutar'])
-          : b['Fatura Kesilecek Tutar'].compareTo(a['Fatura Kesilecek Tutar']));
+      fetchSortedCustomers(ascending);
     }
-    setState(() {
-      sortColumnIndex = columnIndex;
-      isAscending = ascending;
-    });
   }
+
+
 
   Future<void> pickJsonFile() async {
     try {
@@ -202,7 +415,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
         String filePath = result.files.single.path!;
         String jsonString = await File(filePath).readAsString();
         List<dynamic> jsonData = json.decode(jsonString);
-        List<Map<String, dynamic>> newCustomersList = List<Map<String, dynamic>>.from(jsonData);
+        List<Map<String, dynamic>> newCustomersList = List<
+            Map<String, dynamic>>.from(jsonData);
 
         await addCustomers(newCustomersList);
 
@@ -242,15 +456,26 @@ class _CustomersScreenState extends State<CustomersScreen> {
       var query = await collection.where('Kodu', isEqualTo: code).get();
 
       if (query.docs.isEmpty) {
-        // AçıklamaLowerCase alanını ekliyoruz
-        newCustomer['AçıklamaLowerCase'] = (newCustomer['Açıklama'] ?? '').toLowerCase();
+        // Eğer Fatura Kesilecek Tutar alanı yoksa ekle
+        if (!newCustomer.containsKey('Fatura Kesilecek Tutar')) {
+          newCustomer['Fatura Kesilecek Tutar'] = 0.0;
+        }
+
+        // Açıklama alanını küçük harfe çevir
+        if (newCustomer.containsKey('Açıklama')) {
+          newCustomer['AçıklamaLowerCase'] = (newCustomer['Açıklama'] ?? '').toLowerCase();
+        }
+
         await collection.add(newCustomer);
         addedCount++;
         newCustomers.add(newCustomer);
       }
 
-      Provider.of<LoadingProvider>(context, listen: false).updateProgress((i + 1) / newCustomersList.length);
+      Provider.of<LoadingProvider>(context, listen: false).updateProgress(
+          (i + 1) / newCustomersList.length);
     }
+
+    fetchInitialCustomers(); // Yeni müşteri listesini almak için çağır
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -259,6 +484,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
       ),
     );
   }
+
+
 
   void showNewCustomersForDiscount() {
     showDialog(
@@ -283,7 +510,12 @@ class _CustomersScreenState extends State<CustomersScreen> {
                         customer['iskonto'] = newValue;
                       });
                     },
-                    items: ['A Seviye', 'B Seviye', 'C Seviye', ...discountLevels].map((String level) {
+                    items: [
+                      'A Seviye',
+                      'B Seviye',
+                      'C Seviye',
+                      ...discountLevels
+                    ].map((String level) {
                       return DropdownMenuItem<String>(
                         value: level,
                         child: Text(level),
@@ -312,8 +544,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
   }
 
   Future<void> saveCustomerDiscount(Map<String, dynamic> customer) async {
-    var customerCollection = FirebaseFirestore.instance.collection('veritabanideneme');
-    var querySnapshot = await customerCollection.where('Kodu', isEqualTo: customer['Kodu']).get();
+    var customerCollection = FirebaseFirestore.instance.collection(
+        'veritabanideneme');
+    var querySnapshot = await customerCollection.where(
+        'Kodu', isEqualTo: customer['Kodu']).get();
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
@@ -337,6 +571,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
   }
 
   @override
+  @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: CustomAppBar(title: 'Müşteriler'),
@@ -355,7 +591,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       setState(() {
                         isSearching = true;
                       });
-                      searchAndSetCustomers(query);
+                      searchCustomers(query);
                     },
                     decoration: InputDecoration(
                       hintText: 'Müşteri ara...',
@@ -405,81 +641,68 @@ class _CustomersScreenState extends State<CustomersScreen> {
             },
           ),
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('veritabanideneme').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
-                } else if (snapshot.hasError) {
-                  return Center(child: Text('Bir hata oluştu: ${snapshot.error}'));
-                }
+            child: SingleChildScrollView(
+              controller: scrollController,
+              scrollDirection: Axis.vertical,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Column(
+                  children: [
+                    DataTable(
+                      columns: [
+                        DataColumn(
+                          label: Text('FATURA KESİLECEK TUTAR'),
+                          onSort: (columnIndex, ascending) =>
+                              sortCustomers(columnIndex, ascending),
+                        ),
+                        DataColumn(
+                          label: Text('MÜŞTERİ'),
 
-                var data = snapshot.data;
-                if (data != null) {
-                  var documents = data.docs;
-
-                  customers = documents;
-                  filteredCustomers = documents.map((doc) {
-                    var data = doc.data() as Map<String, dynamic>;
-                    return {
-                      'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
-                      'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
-                    };
-                  }).toList();
-
-                  return SingleChildScrollView(
-                    controller: scrollController,
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Column(
-                        children: [
-                          DataTable(
-                            columns: [
-                              DataColumn(
-                                label: Text('FATURA KESİLECEK TUTAR'),
-                                onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
-                              ),
-                              DataColumn(
-                                label: Text('MÜŞTERİ'),
-                                onSort: (columnIndex, ascending) => sortCustomers(columnIndex, ascending),
-                              ),
-                            ],
-                            rows: filteredCustomers.map((customer) {
-                              return DataRow(cells: [
-                                DataCell(Text(customer['Fatura Kesilecek Tutar'].toString())),
-                                DataCell(
-                                  Text(customer['Açıklama']),
-                                  onTap: () => navigateToCustomerDetails(customer['Açıklama']),
-                                ),
-                              ]);
-                            }).toList(),
+                        ),
+                      ],
+                      rows: filteredCustomers.map((customer) {
+                        return DataRow(cells: [
+                          DataCell(Text(
+                              customer['Fatura Kesilecek Tutar'].toString())),
+                          DataCell(
+                            Text(customer['Açıklama']),
+                            onTap: () => navigateToCustomerDetails(
+                                customer['Açıklama']),
                           ),
-                          if (showFetchButton)
-                            Center(
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    showFetchButton = false;
-                                  });
-                                  fetchAdditionalCustomers(20);
-                                },
-                                child: Text('Müşteri Getir'),
-                              ),
-                            ),
-                        ],
-                      ),
+                        ]);
+                      }).toList(),
                     ),
-                  );
-                } else {
-                  return Center(child: Text('Veri bulunamadı.'));
-                }
-              },
+                    if (showFetchButton)
+                      Center(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              showFetchButton = false;
+                            });
+                            fetchAdditionalCustomers(20);
+                          },
+                          child: Text('Müşteri Getir'),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ],
       ),
-      bottomNavigationBar: CustomBottomBar(),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'toplam fatura tutarı: $totalInvoiceAmount',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          CustomBottomBar(),
+        ],
+      ),
     );
   }
+
+
 }
