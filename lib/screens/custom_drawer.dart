@@ -69,6 +69,13 @@ class CustomDrawer extends StatelessWidget {
               Navigator.pushNamed(context, '/quotes');
             },
           ),
+          ListTile(
+            leading: Icon(Icons.shopping_bag),
+            title: Text('Ürünler'),
+            onTap: () {
+              Navigator.pushNamed(context, '/products');
+            },
+          ),
         ],
       ),
     );

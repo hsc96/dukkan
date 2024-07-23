@@ -15,6 +15,7 @@ import 'screens/customer_details_screen.dart';  // Bu satırı ekliyoruz
 import 'package:provider/provider.dart';
 import 'providers/loading_provider.dart';
 import 'screens/quotes_screen.dart';
+import 'screens/products_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
           '/customers': (context) => CustomersScreen(),
           '/customer_details': (context) => CustomerDetailsScreen(customerName: 'Example Customer'), // Bu satırı ekliyoruz
           '/quotes': (context) => QuotesScreen(),
+          '/products': (context) => ProductsScreen(), // Yeni sayfa için rota
         },
       ),
     );
