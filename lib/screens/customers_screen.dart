@@ -204,7 +204,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         };
       }).toList();
 
-      double totalAmount = querySnapshot.docs.fold(0.0, (sum, doc) {
+      double additionalTotalAmount = querySnapshot.docs.fold(0.0, (sum, doc) {
         var data = doc.data() as Map<String, dynamic>;
         return sum + (data['Fatura Kesilecek Tutar'] ?? 0.0);
       });
@@ -212,7 +212,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
       setState(() {
         customers.addAll(querySnapshot.docs);
         filteredCustomers.addAll(additionalCustomers);
-        totalInvoiceAmount = double.parse(totalAmount.toStringAsFixed(3));
+        totalInvoiceAmount += additionalTotalAmount;  // Mevcut toplamın üzerine ekle
+        totalInvoiceAmount = double.parse(totalInvoiceAmount.toStringAsFixed(3));
         isFetchingAdditionalCustomers = false;
       });
     } catch (e) {
@@ -227,6 +228,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       });
     }
   }
+
 
 
 
