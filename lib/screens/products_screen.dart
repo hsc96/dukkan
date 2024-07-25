@@ -47,94 +47,57 @@ class _ProductsScreenState extends State<ProductsScreen> {
       query = query.startAfterDocument(lastDocument!);
     }
 
-    if (searchQuery.isNotEmpty) {
-      Query barkodQuery = FirebaseFirestore.instance
-          .collection('urunler')
-          .where('Barkod', isEqualTo: searchQuery)
-          .limit(50);
+    try {
+      var querySnapshot = await query.get();
+      print('Fetched ${querySnapshot.docs.length} documents');
 
-      Query detayQuery = FirebaseFirestore.instance
-          .collection('urunler')
-          .where('Detay', isGreaterThanOrEqualTo: searchQuery)
-          .where('Detay', isLessThanOrEqualTo: searchQuery + '\uf8ff')
-          .limit(50);
+      var filteredDocs = querySnapshot.docs.where((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        bool matchesDoviz = selectedDoviz.isEmpty || selectedDoviz.contains(data['Doviz']);
+        bool matchesMarka = selectedMarka.isEmpty || selectedMarka.contains(data['Marka']);
+        return matchesDoviz && matchesMarka;
+      }).toList();
 
-      Query koduQuery = FirebaseFirestore.instance
-          .collection('urunler')
-          .where('Kodu', isEqualTo: searchQuery)
-          .limit(50);
+      print('Filtered ${filteredDocs.length} documents based on selectedDoviz and selectedMarka');
 
-      if (lastDocument != null) {
-        barkodQuery = barkodQuery.startAfterDocument(lastDocument!);
-        detayQuery = detayQuery.startAfterDocument(lastDocument!);
-        koduQuery = koduQuery.startAfterDocument(lastDocument!);
-      }
+      if (filteredDocs.isNotEmpty) {
+        lastDocument = filteredDocs.last;
 
-      var barkodResult = await barkodQuery.get();
-      var detayResult = await detayQuery.get();
-      var koduResult = await koduQuery.get();
+        var newProducts = filteredDocs.map((doc) {
+          var data = doc.data() as Map<String, dynamic>;
+          return {
+            'Ana Birim': data['Ana Birim'] ?? '',
+            'Barkod': data['Barkod'] ?? '',
+            'Detay': data['Detay'] ?? '',
+            'Doviz': data['Doviz'] ?? '',
+            'Fiyat': data['Fiyat'] ?? '',
+            'Kodu': data['Kodu'] ?? '',
+            'Marka': data['Marka'] ?? '',
+          };
+        }).toList();
 
-      var allDocs = [...barkodResult.docs, ...detayResult.docs, ...koduResult.docs];
-      var uniqueDocs = allDocs.toSet().toList();
+        // Mükerrer kontrolü
+        var existingKoduSet = products.map((product) => product['Kodu']).toSet();
+        var filteredProducts = newProducts.where((product) => !existingKoduSet.contains(product['Kodu'])).toList();
 
-      if (uniqueDocs.isNotEmpty) {
-        lastDocument = uniqueDocs.last;
+        print('Adding ${filteredProducts.length} new products to the list');
 
         setState(() {
-          products.addAll(uniqueDocs.map((doc) {
-            var data = doc.data() as Map<String, dynamic>;
-            return {
-              'Ana Birim': data['Ana Birim'] ?? '',
-              'Barkod': data['Barkod'] ?? '',
-              'Detay': data['Detay'] ?? '',
-              'Doviz': data['Doviz'] ?? '',
-              'Fiyat': data['Fiyat'] ?? '',
-              'Kodu': data['Kodu'] ?? '',
-              'Marka': data['Marka'] ?? '',
-            };
-          }).toList());
+          products.addAll(filteredProducts);
         });
+
+        if (filteredProducts.isEmpty) {
+          setState(() {
+            hasMore = false;
+          });
+        }
       } else {
         setState(() {
           hasMore = false;
         });
       }
-    } else {
-      try {
-        var querySnapshot = await query.get();
-
-        var filteredDocs = querySnapshot.docs.where((doc) {
-          var data = doc.data() as Map<String, dynamic>;
-          bool matchesDoviz = selectedDoviz.isEmpty || selectedDoviz.contains(data['Doviz']);
-          bool matchesMarka = selectedMarka.isEmpty || selectedMarka.contains(data['Marka']);
-          return matchesDoviz && matchesMarka;
-        }).toList();
-
-        if (filteredDocs.isNotEmpty) {
-          lastDocument = filteredDocs.last;
-
-          setState(() {
-            products.addAll(filteredDocs.map((doc) {
-              var data = doc.data() as Map<String, dynamic>;
-              return {
-                'Ana Birim': data['Ana Birim'] ?? '',
-                'Barkod': data['Barkod'] ?? '',
-                'Detay': data['Detay'] ?? '',
-                'Doviz': data['Doviz'] ?? '',
-                'Fiyat': data['Fiyat'] ?? '',
-                'Kodu': data['Kodu'] ?? '',
-                'Marka': data['Marka'] ?? '',
-              };
-            }).toList());
-          });
-        } else {
-          setState(() {
-            hasMore = false;
-          });
-        }
-      } catch (e) {
-        print('Error fetching products: $e');
-      }
+    } catch (e) {
+      print('Error fetching products: $e');
     }
 
     setState(() {
@@ -149,7 +112,70 @@ class _ProductsScreenState extends State<ProductsScreen> {
       lastDocument = null;
       hasMore = true;
     });
-    fetchProducts();
+
+    if (selectedDoviz.isNotEmpty || selectedMarka.isNotEmpty) {
+      fetchProducts();
+    } else {
+      // Eğer filtreleme yapılmamışsa, doğrudan veritabanında arama yap
+      Query koduQuery = FirebaseFirestore.instance
+          .collection('urunler')
+          .where('Kodu', isGreaterThanOrEqualTo: searchQuery)
+          .where('Kodu', isLessThanOrEqualTo: searchQuery + '\uf8ff')
+          .limit(50);
+
+      Query detayQuery = FirebaseFirestore.instance
+          .collection('urunler')
+          .where('Detay', isGreaterThanOrEqualTo: searchQuery)
+          .where('Detay', isLessThanOrEqualTo: searchQuery + '\uf8ff')
+          .limit(50);
+
+      Future.wait([koduQuery.get(), detayQuery.get()]).then((results) {
+        var allDocs = [...results[0].docs, ...results[1].docs];
+        print('Search returned ${allDocs.length} documents');
+
+        var uniqueDocs = allDocs.toSet().toList();
+        print('Unique documents count: ${uniqueDocs.length}');
+
+        if (uniqueDocs.isNotEmpty) {
+          lastDocument = uniqueDocs.last;
+
+          var newProducts = uniqueDocs.map((doc) {
+            var data = doc.data() as Map<String, dynamic>;
+            return {
+              'Ana Birim': data['Ana Birim'] ?? '',
+              'Barkod': data['Barkod'] ?? '',
+              'Detay': data['Detay'] ?? '',
+              'Doviz': data['Doviz'] ?? '',
+              'Fiyat': data['Fiyat'] ?? '',
+              'Kodu': data['Kodu'] ?? '',
+              'Marka': data['Marka'] ?? '',
+            };
+          }).toList();
+
+          // Mükerrer kontrolü
+          var existingKoduSet = products.map((product) => product['Kodu']).toSet();
+          var filteredProducts = newProducts.where((product) => !existingKoduSet.contains(product['Kodu'])).toList();
+
+          print('Adding ${filteredProducts.length} new products to the list after search');
+
+          setState(() {
+            products.addAll(filteredProducts);
+          });
+
+          if (filteredProducts.isEmpty) {
+            setState(() {
+              hasMore = false;
+            });
+          }
+        } else {
+          setState(() {
+            hasMore = false;
+          });
+        }
+      }).catchError((error) {
+        print('Error searching products: $error');
+      });
+    }
   }
 
   void showFilterDialog() {
