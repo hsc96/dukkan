@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:barcode_scan2/barcode_scan2.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'purchase_history_screen.dart';
+
 class ProductsScreen extends StatefulWidget {
   @override
   _ProductsScreenState createState() => _ProductsScreenState();
@@ -178,6 +180,42 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
+  Future<void> scanBarcode() async {
+    try {
+      var result = await BarcodeScanner.scan();
+      var barcode = result.rawContent;
+
+      if (barcode.isNotEmpty) {
+        var querySnapshot = await FirebaseFirestore.instance
+            .collection('urunler')
+            .where('Barkod', isEqualTo: barcode)
+            .get();
+
+        if (querySnapshot.docs.isNotEmpty) {
+          var product = querySnapshot.docs.first.data();
+          var productId = product['Kodu'] as String;
+          var productDetail = product['Detay'] as String;
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PurchaseHistoryScreen(
+                productId: productId,
+                productDetail: productDetail,
+              ),
+            ),
+          );
+        } else {
+          print('Ürün bulunamadı.');
+        }
+      }
+    } catch (e) {
+      setState(() {
+        print('Barkod tarama hatası: $e');
+      });
+    }
+  }
+
   void showFilterDialog() {
     showDialog(
       context: context,
@@ -264,8 +302,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   MaterialPageRoute(
                     builder: (context) => PurchaseHistoryScreen(
                       productId: product['Kodu'],
-                        productDetail: product['Detay'],
-
+                      productDetail: product['Detay'],
                     ),
                   ),
                 );
@@ -289,6 +326,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
           children: [
             Row(
               children: [
+                IconButton(
+                  icon: Icon(Icons.camera_alt, color: Colors.blue),
+                  onPressed: scanBarcode,
+                ),
+                Text('Ürün Tara'),
                 Expanded(
                   child: TextField(
                     controller: _searchController,
