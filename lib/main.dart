@@ -16,7 +16,7 @@ import 'package:provider/provider.dart';
 import 'providers/loading_provider.dart';
 import 'screens/quotes_screen.dart';
 import 'screens/products_screen.dart';
-
+import 'screens/purchase_history_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -54,6 +54,7 @@ class MyApp extends StatelessWidget {
           '/customer_details': (context) => CustomerDetailsScreen(customerName: 'Example Customer'), // Bu satırı ekliyoruz
           '/quotes': (context) => QuotesScreen(),
           '/products': (context) => ProductsScreen(), // Yeni sayfa için rota
+          '/purchase_history': (context) => PurchaseHistoryScreen(productId: '', productDetail: ''), // Dummy ID
         },
       ),
     );

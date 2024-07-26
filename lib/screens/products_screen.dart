@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
-
+import 'purchase_history_screen.dart';
 class ProductsScreen extends StatefulWidget {
   @override
   _ProductsScreenState createState() => _ProductsScreenState();
@@ -256,7 +256,21 @@ class _ProductsScreenState extends State<ProductsScreen> {
             DataCell(Text(product['Detay'])),
             DataCell(Text(product['Doviz'])),
             DataCell(Text(product['Fiyat'].toString())),
-            DataCell(Text(product['Kodu'])),
+            DataCell(
+              Text(product['Kodu']),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PurchaseHistoryScreen(
+                      productId: product['Kodu'],
+                        productDetail: product['Detay'],
+
+                    ),
+                  ),
+                );
+              },
+            ),
             DataCell(Text(product['Marka'])),
           ]);
         }).toList(),
