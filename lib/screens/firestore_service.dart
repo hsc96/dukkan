@@ -1,7 +1,37 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  Future<void> addUser(String uid, String email, String role) async {
+    await _db.collection('users').doc(uid).set({
+      'email': email,
+      'role': role,
+    });
+  }
+
+  Future<void> createUserWithEmail(String email, String password, String role) async {
+    UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    User? user = userCredential.user;
+
+    if (user != null) {
+      await addUser(user.uid, email, role);
+    }
+  }
+
+  Future<void> createUserWithPhone(String phone, String role) async {
+    // Telefon numarası ile kullanıcı oluşturma işlemleri
+    // Bu kısımda Firebase Authentication'ın telefon numarası ile doğrulama yöntemlerini kullanmanız gerekecek
+  }
+
+  Future<void> updateUserRole(String userId, String newRole) async {
+    await _db.collection('users').doc(userId).update({'role': newRole});
+  }
 
   Future<Map<String, dynamic>> getProductByBarcode(String barcode) async {
     var querySnapshot = await _db.collection('urunler')

@@ -13,7 +13,7 @@ class CustomBottomBar extends StatelessWidget {
         children: [
           ElevatedButton(
             onPressed: () {
-              Navigator.pushNamed(context, '/');
+              Navigator.pushNamed(context, '/home');
             },
             child: const Text('ANASAYFA'),
             style: ElevatedButton.styleFrom(

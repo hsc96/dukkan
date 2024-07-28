@@ -11,12 +11,18 @@ import 'screens/calendar_screen.dart';
 import 'screens/iskonto_screen.dart';
 import 'screens/ZamGuncelleScreen.dart';
 import 'screens/customers_screen.dart';
-import 'screens/customer_details_screen.dart';  // Bu satırı ekliyoruz
+import 'screens/customer_details_screen.dart';
 import 'package:provider/provider.dart';
 import 'providers/loading_provider.dart';
 import 'screens/quotes_screen.dart';
 import 'screens/products_screen.dart';
 import 'screens/purchase_history_screen.dart';
+import 'screens/users_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/user_management_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/settings_screen.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -40,9 +46,10 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),
-        initialRoute: '/',
+        home: AuthCheck(),
         routes: {
-          '/': (context) => CustomHeaderScreen(),
+          '/login': (context) => LoginScreen(),
+          '/home': (context) => CustomHeaderScreen(),
           '/scan': (context) => ScanScreen(),
           '/awaited_products': (context) => AwaitedProductsScreen(),
           '/faturala': (context) => FaturalaScreen(),
@@ -51,12 +58,43 @@ class MyApp extends StatelessWidget {
           '/iskonto': (context) => IskontoScreen(),
           '/zam_guncelle': (context) => ZamGuncelleScreen(),
           '/customers': (context) => CustomersScreen(),
-          '/customer_details': (context) => CustomerDetailsScreen(customerName: 'Example Customer'), // Bu satırı ekliyoruz
+          '/customer_details': (context) => CustomerDetailsScreen(customerName: 'Example Customer'),
           '/quotes': (context) => QuotesScreen(),
-          '/products': (context) => ProductsScreen(), // Yeni sayfa için rota
-          '/purchase_history': (context) => PurchaseHistoryScreen(productId: '', productDetail: ''), // Dummy ID
+          '/products': (context) => ProductsScreen(),
+          '/purchase_history': (context) => PurchaseHistoryScreen(productId: '', productDetail: ''),
+          '/users': (context) => UsersScreen(),
+          '/user_management': (context) => UserManagementScreen(),
+          '/settings': (context) => SettingsScreen(),
         },
       ),
     );
+  }
+}
+
+class AuthCheck extends StatefulWidget {
+  @override
+  _AuthCheckState createState() => _AuthCheckState();
+}
+
+class _AuthCheckState extends State<AuthCheck> {
+  bool _isLoggedIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool? isLoggedIn = prefs.getBool('remember_me') ?? false;
+    setState(() {
+      _isLoggedIn = isLoggedIn;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _isLoggedIn ? CustomHeaderScreen() : LoginScreen();
   }
 }

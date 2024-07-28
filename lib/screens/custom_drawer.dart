@@ -1,7 +1,29 @@
 import 'package:flutter/material.dart';
-import '../utils/colors.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CustomDrawer extends StatelessWidget {
+  final User? user = FirebaseAuth.instance.currentUser;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
+
+  Future<void> _signOut(BuildContext context) async {
+    await _auth.signOut();
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remember_me', false);
+    Navigator.pushReplacementNamed(context, '/login');
+  }
+
+  Future<String?> _getUserRole() async {
+    if (user != null) {
+      DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
+      return doc['role'];
+    }
+    return null;
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
@@ -10,12 +32,12 @@ class CustomDrawer extends StatelessWidget {
         children: <Widget>[
           DrawerHeader(
             decoration: BoxDecoration(
-              color: colorTheme3,
+              color: Colors.blue,
             ),
             child: Text(
               'Menü',
               style: TextStyle(
-                color: colorTheme5,
+                color: Colors.white,
                 fontSize: 24,
               ),
             ),
@@ -24,7 +46,7 @@ class CustomDrawer extends StatelessWidget {
             leading: Icon(Icons.home),
             title: Text('Anasayfa'),
             onTap: () {
-              Navigator.pushNamed(context, '/');
+              Navigator.pushNamed(context, '/home');
             },
           ),
           ListTile(
@@ -38,7 +60,7 @@ class CustomDrawer extends StatelessWidget {
             leading: Icon(Icons.settings),
             title: Text('Ayarlar'),
             onTap: () {
-              // Ayarlar butonuna basıldığında yapılacak işlemler
+              Navigator.pushNamed(context, '/settings');
             },
           ),
           ListTile(
@@ -46,20 +68,6 @@ class CustomDrawer extends StatelessWidget {
             title: Text('Beklenen Ürünler'),
             onTap: () {
               Navigator.pushNamed(context, '/awaited_products');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.local_offer),
-            title: Text('İskonto'),
-            onTap: () {
-              Navigator.pushNamed(context, '/iskonto');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.update),
-            title: Text('Zam Güncelle'),
-            onTap: () {
-              Navigator.pushNamed(context, '/zam_guncelle');
             },
           ),
           ListTile(
@@ -75,6 +83,53 @@ class CustomDrawer extends StatelessWidget {
             onTap: () {
               Navigator.pushNamed(context, '/products');
             },
+          ),
+          FutureBuilder<String?>(
+            future: _getUserRole(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return ListTile(
+                  leading: CircularProgressIndicator(),
+                  title: Text('Loading...'),
+                );
+              }
+              String? role = snapshot.data;
+              if (role != null && role != 'giriş') {
+                return Column(
+                  children: [
+                    if (role == 'admin') ...[
+                      ListTile(
+                        leading: Icon(Icons.local_offer),
+                        title: Text('İskonto'),
+                        onTap: () {
+                          Navigator.pushNamed(context, '/iskonto');
+                        },
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.update),
+                        title: Text('Zam Güncelle'),
+                        onTap: () {
+                          Navigator.pushNamed(context, '/zam_guncelle');
+                        },
+                      ),
+                      ListTile(
+                        leading: Icon(Icons.supervised_user_circle),
+                        title: Text('Kullanıcı Yönetimi'),
+                        onTap: () {
+                          Navigator.pushNamed(context, '/user_management');
+                        },
+                      ),
+                    ]
+                  ],
+                );
+              }
+              return Container();
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.exit_to_app),
+            title: Text('Çıkış Yap'),
+            onTap: () => _signOut(context),
           ),
         ],
       ),
