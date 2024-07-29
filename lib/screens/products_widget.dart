@@ -866,6 +866,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
               Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
               Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
+              Text('İşleme Alan: ${product['islemeAlan'] ?? 'N/A'}'), // İşleme Alan kullanıcı bilgisi
             ],
           ),
           actions: [
@@ -880,6 +881,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
+
 
   void showInfoDialogForKit(Map<String, dynamic> product) {
     DateTime? siparisTarihi;
@@ -942,6 +944,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                 Text('Teslim Alan Çalışan İsmi: ${product['recipient'] ?? 'N/A'}'),
               Text('Sipariş Şekli: ${product['orderMethod'] ?? 'N/A'}'),
               Text('Tarih: ${product['siparisTarihi'] ?? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now())}'),
+              Text('İşleme Alan: ${product['islemeAlan'] ?? 'N/A'}'), // İşleme Alan kullanıcı bilgisi
             ],
           ),
           actions: [
@@ -956,6 +959,8 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
+
+
 
 
   @override

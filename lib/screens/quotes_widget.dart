@@ -5,6 +5,7 @@ import 'package:open_file/open_file.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'pdf_template.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class QuotesWidget extends StatefulWidget {
   final String customerName;
@@ -26,11 +27,26 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   Set<int> selectedQuoteIndexes = {};
   int? selectedQuoteIndex;
   TextEditingController orderNumberController = TextEditingController();
+  String? fullName;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
     super.initState();
     fetchQuotes();
+    fetchCurrentUser();
+  }
+
+  Future<void> fetchCurrentUser() async {
+    User? currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        setState(() {
+          fullName = userDoc.data()?['fullName'];
+        });
+      }
+    }
   }
 
   Future<void> fetchQuotes() async {
@@ -197,7 +213,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Teklif Siparişe Dönüştür'),
+          title: Text('Teklifi Siparişe Dönüştür'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -276,7 +292,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
 
       for (var i = 0; i < updatedProducts.length; i++) {
         var product = updatedProducts[i];
-        print('Dialog ekranındaki ürün: ${product['Kodu']}, index: $i');
 
         var teslimTarihi = product['deliveryDate'];
         if (teslimTarihi is DateTime) {
@@ -297,23 +312,17 @@ class _QuotesWidgetState extends State<QuotesWidget> {
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
           'Müşteri': widget.customerName,
-
+          'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi
         };
-        print('Teklif Numarası: ${quotes[quoteIndex]['quoteNumber']}');
-        print('Sipariş Numarası: $orderNumber');
-        print('Teklif Tarihi: ${quotes[quoteIndex]['date']}');
-        print('Müşteri: ${widget.customerName}');
 
         if (product['isStock'] == true) {
-          productData['buttonInfo'] = 'Teklif'; // Stok seçildiğinde buton bilgisini "Teklif" olarak ayarla
+          productData['buttonInfo'] = 'Teklif';
           existingProducts.add(productData);
-          print('Ürün stok olarak eklendi: ${product['Kodu']}');
         } else {
           productData['Unique ID'] = uniqueId;
           productData['deliveryDate'] = teslimTarihi;
-          productData['buttonInfo'] = 'B.sipariş'; // Stok seçilmediğinde buton bilgisini "B.sipariş" olarak ayarla
+          productData['buttonInfo'] = 'B.sipariş';
           await FirebaseFirestore.instance.collection('pendingProducts').add(productData);
-          print('Ürün beklenen ürünler olarak eklendi: ${product['Kodu']}');
         }
       }
 
@@ -339,7 +348,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('Veri ekleme hatası: $e');
     }
   }
-
 
 
   void toggleSelectAllProducts(int quoteIndex) {

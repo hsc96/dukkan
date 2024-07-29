@@ -16,7 +16,7 @@ import 'package:pdf/widgets.dart' as pw; // PDF işlemleri için
 import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
 import 'pdf_sales_template.dart'; // PDF şablonu için
 import 'customer_details_screen.dart'; // Müşteri detayları ekranını import et
-
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ScanScreen extends StatefulWidget {
   @override
@@ -32,6 +32,13 @@ class _ScanScreenState extends State<ScanScreen> {
   String dolarKur = "";
   String euroKur = "";
   String currentDate = DateFormat('d MMMM y', 'tr_TR').format(DateTime.now()); // Tarih formatı ayarlandı.
+
+
+
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  User? currentUser;
+  String? customerName = 'Müşteri Adı'; // Müşteri adı, uygun bir yerden alınmalı
+  String? quoteNumber = 'Teklif Numarası'; // Teklif numarası, uygun bir yerden alınmalı
 
   List<Map<String, dynamic>> scannedProducts = [];
   List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
@@ -50,6 +57,10 @@ class _ScanScreenState extends State<ScanScreen> {
     super.initState();
     fetchCustomers();
     initializeDovizKur();
+    fetchCurrentUser();
+  }
+  Future<void> fetchCurrentUser() async {
+    currentUser = _auth.currentUser;
   }
 
   Future<void> initializeDovizKur() async {
@@ -61,6 +72,7 @@ class _ScanScreenState extends State<ScanScreen> {
       euroKur = kurlar['euro']!;
     });
   }
+
 
 
   void filterCustomers(String query) {
@@ -87,6 +99,76 @@ class _ScanScreenState extends State<ScanScreen> {
       filteredCustomers = descriptions;
     });
   }
+  Future<void> processSale() async {
+    if (selectedCustomer == null) return;
+
+    User? currentUser = FirebaseAuth.instance.currentUser;
+
+    String? fullName;
+
+    // Mevcut kullanıcının tam adını veritabanından çekiyoruz
+    if (currentUser != null) {
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        fullName = userDoc.data()?['fullName'];
+      }
+    }
+
+    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
+
+    var processedProducts = scannedProducts.map((product) {
+      return {
+        ...product,
+        'whoTook': 'Müşteri', // Örneğin müşteri aldı olarak belirliyoruz
+        'recipient': 'Teslim Alan', // Örneğin teslim alan kişi
+        'contactPerson': 'İlgili Kişi', // Örneğin firmadan bilgilendirilecek kişi
+        'orderMethod': 'Telefon', // Örneğin sipariş şekli telefon
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()), // Sipariş Tarihini ekle
+        'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi (fullName)
+      };
+    }).toList();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      var docRef = querySnapshot.docs.first.reference;
+      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
+
+      // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
+      for (var product in processedProducts) {
+        existingProducts.add(product);
+      }
+
+      await docRef.update({
+        'products': existingProducts,
+      });
+    } else {
+      await customerCollection.add({
+        'customerName': selectedCustomer,
+        'products': processedProducts,
+      });
+    }
+
+    // Kullanıcıya ait satış bilgilerini güncelle
+    await FirebaseFirestore.instance.collection('sales').add({
+      'userId': currentUser!.uid,
+      'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
+      'amount': toplamTutar,
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
+    );
+
+    // Müşteri detayları ekranına yönlendir
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
+      ),
+    );
+  }
+
+
 
   Future<void> fetchDovizKur() async {
     DovizService dovizService = DovizService();
@@ -334,6 +416,18 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> saveToCustomerDetails(String whoTook, String? recipient, String? contactPerson, String orderMethod) async {
     if (selectedCustomer == null) return;
 
+    User? currentUser = FirebaseAuth.instance.currentUser;
+
+    String? fullName;
+
+    // Mevcut kullanıcının tam adını veritabanından çekiyoruz
+    if (currentUser != null) {
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        fullName = userDoc.data()?['fullName'];
+      }
+    }
+
     var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
     var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
@@ -345,6 +439,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'contactPerson': contactPerson,
         'orderMethod': orderMethod,
         'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()), // Sipariş Tarihini ekle
+        'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi (fullName)
       };
     }).toList();
 
@@ -379,6 +474,8 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+
+
 
 
 
@@ -869,9 +966,11 @@ class _ScanScreenState extends State<ScanScreen> {
                   child: Text('Teklif Ver'),
                 ),
                 ElevatedButton(
-                  onPressed: showProcessingDialog, // Hesaba işle fonksiyonunu burada tanımladık
+                  onPressed: () async {
+                    await showProcessingDialog();
+                    await processSale();
+                  },
                   child: Text('Hesaba İşle'),
-
                 ),
             ElevatedButton(
               onPressed: saveAsPDF,

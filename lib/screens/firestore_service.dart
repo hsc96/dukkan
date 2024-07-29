@@ -5,14 +5,16 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<void> addUser(String uid, String email, String role) async {
+  Future<void> addUser(String uid, String email, String role, String fullName) async {
     await _db.collection('users').doc(uid).set({
       'email': email,
       'role': role,
+      'fullName': fullName,
     });
   }
 
-  Future<void> createUserWithEmail(String email, String password, String role) async {
+
+  Future<void> createUserWithEmail(String email, String password, String role, String fullName) async {
     UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -20,11 +22,11 @@ class FirestoreService {
     User? user = userCredential.user;
 
     if (user != null) {
-      await addUser(user.uid, email, role);
+      await addUser(user.uid, email, role, fullName);
     }
   }
 
-  Future<void> createUserWithPhone(String phone, String role) async {
+  Future<void> createUserWithPhone(String phone, String role, String fullName) async {
     // Telefon numarası ile kullanıcı oluşturma işlemleri
     // Bu kısımda Firebase Authentication'ın telefon numarası ile doğrulama yöntemlerini kullanmanız gerekecek
   }

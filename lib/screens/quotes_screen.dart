@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'pdf_template.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class QuotesScreen extends StatefulWidget {
   @override
@@ -20,11 +21,28 @@ class _QuotesScreenState extends State<QuotesScreen> {
   TextEditingController orderNumberController = TextEditingController();
   Set<int> selectedProductIndexes = {};
   int? selectedQuoteIndex;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  User? currentUser;
+  String? fullName;
 
   @override
   void initState() {
     super.initState();
     fetchQuotes();
+    fetchCurrentUser();
+  }
+
+
+  Future<void> fetchCurrentUser() async {
+    currentUser = _auth.currentUser;
+    if (currentUser != null) {
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).get();
+      if (userDoc.exists) {
+        setState(() {
+          fullName = userDoc.data()?['fullName'];
+        });
+      }
+    }
   }
 
   Future<void> fetchQuotes() async {
@@ -112,7 +130,6 @@ class _QuotesScreenState extends State<QuotesScreen> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
-
   void convertQuoteToOrder(Map<String, dynamic> quote) {
     if (selectedProductIndexes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -228,6 +245,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
           'Beklenen Teklif': true,
           'Ürün Hazır Olma Tarihi': Timestamp.now(),
           'Müşteri': customerName,
+          'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi
         };
 
         if (product['isStock'] == true) {

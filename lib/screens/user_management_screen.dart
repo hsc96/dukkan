@@ -11,6 +11,7 @@ class UserManagementScreen extends StatefulWidget {
 class _UserManagementScreenState extends State<UserManagementScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   String _selectedRole = 'admin';
   String? _errorMessage;
@@ -23,21 +24,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     try {
       String email = _emailController.text;
       String password = _passwordController.text;
+      String fullName = _fullNameController.text;
       String phone = _phoneController.text;
 
-      if (email.isNotEmpty && password.isNotEmpty) {
-        await _firestoreService.createUserWithEmail(email, password, _selectedRole);
-      } else if (phone.isNotEmpty) {
-        await _firestoreService.createUserWithPhone(phone, _selectedRole);
+      if (email.isNotEmpty && password.isNotEmpty && fullName.isNotEmpty) {
+        await _firestoreService.createUserWithEmail(email, password, _selectedRole, fullName);
+        setState(() {
+          _errorMessage = 'Kullanıcı başarıyla oluşturuldu';
+        });
       } else {
         setState(() {
-          _errorMessage = 'Lütfen e-posta/şifre veya telefon numarası giriniz.';
+          _errorMessage = 'Lütfen tüm alanları doldurun';
         });
       }
-
-      setState(() {
-        _errorMessage = null;
-      });
     } catch (e) {
       setState(() {
         _errorMessage = e.toString();
@@ -57,6 +56,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
           'uid': userDoc.id,
           'email': userData['email'],
           'role': userData['role'],
+          'fullName': userData['fullName'],
         });
       }
     } catch (e) {
@@ -86,6 +86,10 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            TextField(
+              controller: _fullNameController,
+              decoration: InputDecoration(labelText: 'Ad Soyad'),
+            ),
             TextField(
               controller: _emailController,
               decoration: InputDecoration(labelText: 'Email'),
@@ -130,16 +134,17 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     return Center(child: CircularProgressIndicator());
                   }
                   var users = snapshot.data!;
+                  var allRoles = [..._roles, 'Kullanım Dışı'];
                   return ListView.builder(
                     itemCount: users.length,
                     itemBuilder: (context, index) {
                       var user = users[index];
                       return ListTile(
-                        title: Text(user['email']),
-                        subtitle: Text('Rol: ${user['role']}'),
+                        title: Text(user['fullName']),
+                        subtitle: Text('Email: ${user['email']}\nRol: ${user['role']}'),
                         trailing: DropdownButton<String>(
                           value: user['role'],
-                          items: _roles.map((String role) {
+                          items: allRoles.map((String role) {
                             return DropdownMenuItem<String>(
                               value: role,
                               child: Text(role),
