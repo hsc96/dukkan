@@ -17,7 +17,7 @@ import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
 import 'pdf_sales_template.dart'; // PDF şablonu için
 import 'customer_details_screen.dart'; // Müşteri detayları ekranını import et
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'dart:ui' as ui; // Use ui for TextDirection
 class ScanScreen extends StatefulWidget {
   @override
   _ScanScreenState createState() => _ScanScreenState();
@@ -100,7 +100,12 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
   Future<void> processSale() async {
-    if (selectedCustomer == null) return;
+    if (selectedCustomer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lütfen bir müşteri seçin')),
+      );
+      return;
+    }
 
     User? currentUser = FirebaseAuth.instance.currentUser;
 
@@ -111,21 +116,35 @@ class _ScanScreenState extends State<ScanScreen> {
       var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kullanıcı bilgisi alınamadı')),
+        );
       }
     }
 
     var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
     var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
+    // Sadece dolu ürünleri işleme al
     var processedProducts = scannedProducts.map((product) {
+      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
+      double totalPrice = unitPrice * quantity;
+
       return {
-        ...product,
-        'whoTook': 'Müşteri', // Örneğin müşteri aldı olarak belirliyoruz
-        'recipient': 'Teslim Alan', // Örneğin teslim alan kişi
-        'contactPerson': 'İlgili Kişi', // Örneğin firmadan bilgilendirilecek kişi
-        'orderMethod': 'Telefon', // Örneğin sipariş şekli telefon
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()), // Sipariş Tarihini ekle
-        'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi (fullName)
+        'Kodu': product['Kodu'],
+        'Detay': product['Detay'],
+        'Adet': quantity.toString(),
+        'Adet Fiyatı': unitPrice.toStringAsFixed(2),
+        'Toplam Fiyat': totalPrice.toStringAsFixed(2),
+        'İskonto': product['İskonto'],
+        'whoTook': 'Müşteri',
+        'recipient': 'Teslim Alan',
+        'contactPerson': 'İlgili Kişi',
+        'orderMethod': 'Telefon',
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
+        'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
@@ -134,26 +153,50 @@ class _ScanScreenState extends State<ScanScreen> {
       var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
 
       // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
-      for (var product in processedProducts) {
-        existingProducts.add(product);
-      }
+      existingProducts.addAll(processedProducts);
 
-      await docRef.update({
-        'products': existingProducts,
-      });
+      try {
+        await docRef.update({
+          'products': existingProducts,
+        });
+      } catch (e) {
+        print('Firestore güncelleme hatası: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Veri güncellenirken hata oluştu')),
+        );
+        return; // Hata durumunda işlemden çık
+      }
     } else {
-      await customerCollection.add({
-        'customerName': selectedCustomer,
-        'products': processedProducts,
-      });
+      try {
+        await customerCollection.add({
+          'customerName': selectedCustomer,
+          'products': processedProducts,
+        });
+      } catch (e) {
+        print('Firestore ekleme hatası: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Veri eklenirken hata oluştu')),
+        );
+        return; // Hata durumunda işlemden çık
+      }
     }
 
     // Kullanıcıya ait satış bilgilerini güncelle
-    await FirebaseFirestore.instance.collection('sales').add({
-      'userId': currentUser!.uid,
-      'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
-      'amount': toplamTutar,
-    });
+    try {
+      await FirebaseFirestore.instance.collection('sales').add({
+        'userId': currentUser!.uid,
+        'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
+        'customerName': selectedCustomer,
+        'amount': toplamTutar,
+        'products': processedProducts, // Burada yalnızca işlenen ürünleri kaydediyoruz
+      });
+    } catch (e) {
+      print('Satış verisi ekleme hatası: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Satış verisi eklenirken hata oluştu')),
+      );
+      return; // Hata durumunda işlemden çık
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
@@ -167,6 +210,11 @@ class _ScanScreenState extends State<ScanScreen> {
       ),
     );
   }
+
+
+
+
+
 
 
 
@@ -317,6 +365,7 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+
   Future<void> updateProductsForCustomer() async {
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = originalProducts[i];
@@ -374,8 +423,10 @@ class _ScanScreenState extends State<ScanScreen> {
 
   void updateTotalAndVat() {
     toplamTutar = 0.0;
+
+    // Sadece gerçek ürünlerin toplamını hesapla
     scannedProducts.forEach((product) {
-      if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
+      if (product['Kodu'] != '' && product['Detay'] != '' && product['Adet'] != '') {
         toplamTutar += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
       }
     });
@@ -383,35 +434,18 @@ class _ScanScreenState extends State<ScanScreen> {
     kdv = toplamTutar * 0.20;
     genelToplam = toplamTutar + kdv;
 
+    // UI üzerinde göstermek için güncellemeleri yap
     setState(() {
-      scannedProducts.removeWhere((product) =>
-      (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
-          (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
-          (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false));
-
-      scannedProducts.add({
-        'Kodu': '',
-        'Detay': '',
-        'Adet': '',
-        'Adet Fiyatı': 'Toplam Tutar',
-        'Toplam Fiyat': toplamTutar.toStringAsFixed(2),
-      });
-      scannedProducts.add({
-        'Kodu': '',
-        'Detay': '',
-        'Adet': '',
-        'Adet Fiyatı': 'KDV %20',
-        'Toplam Fiyat': kdv.toStringAsFixed(2),
-      });
-      scannedProducts.add({
-        'Kodu': '',
-        'Detay': '',
-        'Adet': '',
-        'Adet Fiyatı': 'Genel Toplam',
-        'Toplam Fiyat': genelToplam.toStringAsFixed(2),
-      });
+      // scannedProducts listesini değiştirmiyoruz
     });
+
+    print('Toplam Tutar: $toplamTutar');
+    print('KDV: $kdv');
+    print('Genel Toplam: $genelToplam');
   }
+
+
+
 
   Future<void> saveToCustomerDetails(String whoTook, String? recipient, String? contactPerson, String orderMethod) async {
     if (selectedCustomer == null) return;
@@ -432,16 +466,26 @@ class _ScanScreenState extends State<ScanScreen> {
     var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
     var processedProducts = scannedProducts.map((product) {
+      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
+      double totalPrice = unitPrice * quantity;
+
       return {
-        ...product,
-        'whoTook': whoTook,
-        'recipient': recipient,
-        'contactPerson': contactPerson,
-        'orderMethod': orderMethod,
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()), // Sipariş Tarihini ekle
-        'islemeAlan': fullName ?? 'Unknown', // İşleme Alan kullanıcı bilgisi (fullName)
+        'Kodu': product['Kodu'],
+        'Detay': product['Detay'],
+        'Adet': quantity.toString(),
+        'Adet Fiyatı': unitPrice.toStringAsFixed(2),
+        'Toplam Fiyat': totalPrice.toStringAsFixed(2),
+        'İskonto': product['İskonto'],
+        'whoTook': 'Müşteri',
+        'recipient': 'Teslim Alan',
+        'contactPerson': 'İlgili Kişi',
+        'orderMethod': 'Telefon',
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
+        'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
+
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
@@ -758,6 +802,7 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -916,7 +961,7 @@ class _ScanScreenState extends State<ScanScreen> {
                             : Row(
                           children: [
                             IconButton(
-                              icon: Icon(Icons.edit, color: Colors.blue),
+                              icon: Icon(Icons.edit, color: Colors.grey),
                               onPressed: () {
                                 setState(() {
                                   isEditing = true;
@@ -972,29 +1017,76 @@ class _ScanScreenState extends State<ScanScreen> {
                   },
                   child: Text('Hesaba İşle'),
                 ),
-            ElevatedButton(
-              onPressed: saveAsPDF,
-              child: Text('PDF\'e Dönüştür'),
+                ElevatedButton(
+                  onPressed: saveAsPDF,
+                  child: Text('PDF\'e Dönüştür'),
 
-            ),
+                ),
               ],
             ),
           ),
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
-      bottomSheet: Container(
-        padding: EdgeInsets.all(8),
-        color: Colors.grey[200],
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('1 USD: $dolarKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-            Text(currentDate, style: TextStyle(fontSize: 16, color: Colors.black)), // Tarih eklendi
-            Text('1 EUR: $euroKur', style: TextStyle(fontSize: 16, color: Colors.black)),
-          ],
-        ),
+      bottomSheet: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          double fontSize = 16.0;
+          double screenWidth = constraints.maxWidth;
+          double minWidth = screenWidth / 3;
+
+          // Function to calculate the total width of all texts
+          double calculateTotalTextWidth(double fontSize) {
+            return (TextPainter(
+                text: TextSpan(
+                    text: '1 USD: $dolarKur',
+                    style: TextStyle(fontSize: fontSize)),
+                maxLines: 1,
+                textDirection: ui.TextDirection.ltr) // Use ui.TextDirection
+              ..layout())
+                .size
+                .width +
+                (TextPainter(
+                    text: TextSpan(
+                        text: currentDate,
+                        style: TextStyle(fontSize: fontSize)),
+                    maxLines: 1,
+                    textDirection: ui.TextDirection.ltr) // Use ui.TextDirection
+                  ..layout())
+                    .size
+                    .width +
+                (TextPainter(
+                    text: TextSpan(
+                        text: '1 EUR: $euroKur',
+                        style: TextStyle(fontSize: fontSize)),
+                    maxLines: 1,
+                    textDirection: ui.TextDirection.ltr) // Use ui.TextDirection
+                  ..layout())
+                    .size
+                    .width +
+                32.0; // Adding padding space
+          }
+
+          // Adjust font size to fit all texts within the screen width
+          while (calculateTotalTextWidth(fontSize) > screenWidth && fontSize > 10) {
+            fontSize -= 1;
+          }
+
+          return Container(
+            padding: EdgeInsets.all(8),
+            color: Colors.grey[200],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('1 USD: $dolarKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text(currentDate, style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text('1 EUR: $euroKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
-}
+
+
+  }

@@ -60,11 +60,17 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     if (querySnapshot.docs.isNotEmpty) {
       var data = querySnapshot.docs.first.data();
       setState(() {
+        // Debugging için verileri konsola yazdırın
+        print('Fetched Products: ${data['products']}');
         customerProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);
       });
       updateTotalAndVat();
+    } else {
+      print('No products found for customer ${widget.customerName}');
     }
   }
+
+
 
   Future<void> fetchKits() async {
     var querySnapshot = await FirebaseFirestore.instance
@@ -102,6 +108,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       customerProducts[index]['Toplam Fiyat'] = (adet * priceValue).toStringAsFixed(2);
     });
   }
+
 
   void showExplanationDialog(int index, bool isQuantityChanged, bool isPriceChanged) {
     showDialog(
@@ -149,7 +156,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
-
   void updateTotalAndVat() {
     double toplamTutar = 0.0;
     customerProducts.forEach((product) {
@@ -209,6 +215,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       });
     });
   }
+
 
 
 
@@ -1058,7 +1065,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columns: [
-                  DataColumn(label: Text('')),
                   DataColumn(label: Text('Kodu')),
                   DataColumn(label: Text('Detay')),
                   DataColumn(label: Text('Adet')),
@@ -1075,22 +1081,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                       product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
                   return DataRow(cells: [
-                    DataCell(
-                      showRadioButtons && !isTotalRow
-                          ? Checkbox(
-                        value: selectedIndexes.contains(index),
-                        onChanged: (bool? value) {
-                          setState(() {
-                            if (value == true) {
-                              selectedIndexes.add(index);
-                            } else {
-                              selectedIndexes.remove(index);
-                            }
-                          });
-                        },
-                      )
-                          : Container(),
-                    ),
                     DataCell(Text(product['Kodu']?.toString() ?? '')),
                     DataCell(Text(product['Detay']?.toString() ?? '')),
                     DataCell(
@@ -1114,148 +1104,30 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                               },
                             ),
                           )
-                              : Row(
-                            children: [
-                              Text(product['Adet']?.toString() ?? ''),
-                              if (product['Adet Açıklaması'] != null)
-                                IconButton(
-                                  icon: Icon(Icons.info, color: Colors.blue),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return AlertDialog(
-                                          title: Text('Adet Değişikliği Bilgisi'),
-                                          content: Text(
-                                              'Açıklama: ${product['Adet Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Adet: ${product['Eski Adet']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.of(context).pop();
-                                              },
-                                              child: Text('Tamam'),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                            ],
-                          ),
+                              : Text(product['Adet']?.toString() ?? ''),
                         ],
                       ),
                     ),
                     DataCell(
                       isTotalRow
                           ? Text(product['Adet Fiyatı']?.toString() ?? '')
-                          : Row(
-                        children: [
-                          isEditing && editingIndex == index
-                              ? Expanded(
-                            child: TextField(
-                              controller: priceController,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                hintText: 'Adet Fiyatı',
-                              ),
-                              onChanged: (value) {
-                                updatePrice(index, value);
-                              },
-                              onSubmitted: (value) {
-                                showExplanationDialog(index, false, true);
-                              },
-                            ),
-                          )
-                              : Row(
-                            children: [
-                              Text(product['Adet Fiyatı']?.toString() ?? ''),
-                              if (product['Fiyat Açıklaması'] != null)
-                                IconButton(
-                                  icon: Icon(Icons.info, color: Colors.blue),
-                                  onPressed: () {
-                                    showDialog(
-                                      context: context,
-                                      builder: (BuildContext context) {
-                                        return AlertDialog(
-                                          title: Text('Fiyat Değişikliği Bilgisi'),
-                                          content: Text(
-                                              'Açıklama: ${product['Fiyat Açıklaması']}\nDeğiştiren: ${product['Değiştiren']}\nEski Fiyat: ${product['Eski Fiyat']}\nİşlem Tarihi: ${product['İşlem Tarihi']}'),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () {
-                                                Navigator.of(context).pop();
-                                              },
-                                              child: Text('Tamam'),
-                                            ),
-                                          ],
-                                        );
-                                      },
-                                    );
-                                  },
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
+                          : Text(product['Adet Fiyatı']?.toString() ?? ''),
                     ),
                     DataCell(Text(product['İskonto']?.toString() ?? '')),
                     DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                     DataCell(
                       isTotalRow
                           ? Container()
-                          : Row(
-                        children: [
-                          if (isEditing && editingIndex == index)
-                            Row(
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.check, color: Colors.green),
-                                  onPressed: () {
-                                    if (quantityController.text.isNotEmpty || priceController.text.isNotEmpty) {
-                                      showExplanationDialog(index, quantityController.text.isNotEmpty, priceController.text.isNotEmpty);
-                                    } else {
-                                      saveEditsToDatabase(index);
-                                      updateTotalAndVat();
-                                      originalProductData = null;
-                                      setState(() {
-                                        isEditing = false;
-                                        editingIndex = -1;
-                                      });
-                                    }
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.cancel, color: Colors.red),
-                                  onPressed: () {
-                                    setState(() {
-                                      customerProducts[index] = originalProductData!;
-                                      originalProductData = null;
-                                      isEditing = false;
-                                      editingIndex = -1;
-                                    });
-                                  },
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => removeProduct(index),
-                                ),
-                              ],
-                            )
-                          else
-                            IconButton(
-                              icon: Icon(Icons.edit, color: Colors.blue),
-                              onPressed: () {
-                                setState(() {
-                                  isEditing = true;
-                                  editingIndex = index;
-                                  originalProductData = Map<String, dynamic>.from(product);
-                                  quantityController.text = product['Adet']?.toString() ?? '';
-                                  priceController.text = product['Adet Fiyatı']?.toString() ?? '';
-                                });
-                              },
-                            ),
-                        ],
+                          : IconButton(
+                        icon: Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () {
+                          setState(() {
+                            isEditing = true;
+                            editingIndex = index;
+                            originalProductData = Map<String, dynamic>.from(product);
+                            quantityController.text = product['Adet']?.toString() ?? '';
+                          });
+                        },
                       ),
                     ),
                     DataCell(
@@ -1267,6 +1139,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
             ),
           ),
         ),
+
       ],
     );
   }

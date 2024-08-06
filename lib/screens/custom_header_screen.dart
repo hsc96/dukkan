@@ -15,6 +15,7 @@ class CustomHeaderScreen extends StatefulWidget {
 class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   List<Map<String, dynamic>> users = [];
   Map<String, Map<String, dynamic>> salesAndQuotesData = {};
+  Map<String, Map<String, dynamic>> previousSalesData = {};
 
   @override
   void initState() {
@@ -42,15 +43,20 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   Future<void> fetchSalesAndQuotesData() async {
     var today = DateFormat('dd.MM.yyyy').format(DateTime.now());
 
+    // Clear previous data to avoid duplicates
+    salesAndQuotesData.clear();
+
     for (var user in users) {
       var userId = user['id'];
 
+      // Fetch sales data for the user on the current day
       var salesQuerySnapshot = await FirebaseFirestore.instance
           .collection('sales')
           .where('userId', isEqualTo: userId)
           .where('date', isEqualTo: today)
           .get();
 
+      // Fetch quotes data for the user on the current day
       var quotesQuerySnapshot = await FirebaseFirestore.instance
           .collection('quotes')
           .where('userId', isEqualTo: userId)
@@ -60,17 +66,87 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
       int salesCount = salesQuerySnapshot.docs.length;
       int quotesCount = quotesQuerySnapshot.docs.length;
 
-      List<Map<String, dynamic>> salesDetails = salesQuerySnapshot.docs.map((doc) => doc.data()).toList();
+      // Initialize map to hold sales data per customer
+      Map<String, Map<String, dynamic>> aggregatedSales = {};
 
+      for (var doc in salesQuerySnapshot.docs) {
+        var data = doc.data();
+        var customerName = data['customerName'] ?? 'Unknown Customer';
+
+        // Safely parse the amount
+        double amount = 0.0;
+        if (data['amount'] is String) {
+          amount = double.tryParse(data['amount']) ?? 0.0;
+        } else if (data['amount'] is num) {
+          amount = (data['amount'] as num).toDouble();
+        }
+
+        // Fetch product details
+        List<dynamic> products = data['products'] ?? [];
+        Map<String, Map<String, dynamic>> productMap = {};
+
+        // Debug: Print fetched product data
+        print('Fetched products for customer $customerName: $products');
+
+        for (var product in products) {
+          String productName = product['Detay'] ?? 'Ürün Bilgisi Yok';
+          double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+          int quantity = int.tryParse(product['Adet']?.toString() ?? '0') ?? 0;
+          double totalPrice = double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
+
+          // Ürün bilgilerini ekranda göster
+          print('Product details - Name: $productName, Unit Price: $unitPrice, Quantity: $quantity, Total Price: $totalPrice');
+
+
+          // Aggregate product data
+          if (!productMap.containsKey(productName)) {
+            productMap[productName] = {
+              'unitPrice': unitPrice,
+              'quantity': quantity,
+              'totalPrice': totalPrice,
+            };
+          } else {
+            // If the product already exists, update its total values
+            productMap[productName]!['quantity'] += quantity;
+            productMap[productName]!['totalPrice'] += totalPrice;
+          }
+        }
+
+        // Aggregate sales data
+        if (!aggregatedSales.containsKey(customerName)) {
+          aggregatedSales[customerName] = {
+            'totalAmount': 0.0,
+            'products': <Map<String, dynamic>>[],
+          };
+        }
+
+        aggregatedSales[customerName]!['totalAmount'] += amount;
+
+        // Update the product details list
+        List<Map<String, dynamic>> productDetails = productMap.entries.map((entry) {
+          return {
+            'name': entry.key,
+            'unitPrice': entry.value['unitPrice'],
+            'quantity': entry.value['quantity'],
+            'totalPrice': entry.value['totalPrice'],
+          };
+        }).toList();
+
+        aggregatedSales[customerName]!['products'].addAll(productDetails);
+      }
+
+      // Update state with fetched and aggregated data
       setState(() {
         salesAndQuotesData[user['name']] = {
           'salesCount': salesCount,
           'quotesCount': quotesCount,
-          'salesDetails': salesDetails,
+          'salesDetails': aggregatedSales,
         };
       });
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -241,20 +317,91 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                             ]),
                             ...users.map((user) {
                               String userName = user['name'];
+                              var userSalesDetails = salesAndQuotesData[userName]?['salesDetails'] ?? {};
+
                               return TableRow(children: [
                                 TableCell(
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
                                     child: InkWell(
                                       onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => SalesDetailsScreen(
-                                              userName: userName,
-                                              salesDetails: salesAndQuotesData[userName]?['salesDetails'] ?? [],
-                                            ),
-                                          ),
+                                        showModalBottomSheet(
+                                          context: context,
+                                          isScrollControlled: true,
+                                          builder: (BuildContext context) {
+                                            var mergedSalesDetails = {
+                                              ...previousSalesData[userName] ?? {},
+                                              ...userSalesDetails
+                                            };
+
+                                            previousSalesData[userName] =
+                                                mergedSalesDetails.map((key, value) {
+                                                  return MapEntry(
+                                                      key, Map<String, dynamic>.from(value));
+                                                });
+
+                                            return FractionallySizedBox(
+                                              heightFactor: 0.8,
+                                              child: Column(
+                                                children: [
+                                                  Container(
+                                                    padding: EdgeInsets.all(16),
+                                                    child: Text(
+                                                      '$userName - Satış Detayları',
+                                                      style: TextStyle(
+                                                          fontSize: 20,
+                                                          fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ),
+                                                  Expanded(
+                                                    child: ListView(
+                                                      children: mergedSalesDetails.entries
+                                                          .map<Widget>((entry) {
+                                                        String customerName = entry.key;
+                                                        var details = entry.value;
+                                                        double totalAmount =
+                                                            details['totalAmount'] ?? 0.0;
+                                                        List<Map<String, dynamic>> products =
+                                                            details['products'] ?? [];
+
+                                                        return ExpansionTile(
+                                                          title: Text('$customerName - Toplam: ${totalAmount.toStringAsFixed(2)} TL'),
+                                                          children: [
+                                                            ...products.map<Widget>((product) {
+                                                              String productName = product['name'] ?? 'Ürün Bilgisi Yok';
+                                                              double unitPrice = product['unitPrice'] ?? 0.0;
+                                                              int quantity = product['quantity'] ?? 0;
+                                                              double totalPrice = product['totalPrice'] ?? 0.0;
+
+                                                              return ListTile(
+                                                                title: Text(productName),
+                                                                subtitle: Column(
+                                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                                  children: [
+                                                                    Text('Adet Fiyatı: ${unitPrice.toStringAsFixed(2)} TL'),
+                                                                    Text('Adet: $quantity'),
+                                                                    Text('Toplam Fiyat: ${totalPrice.toStringAsFixed(2)} TL'),
+                                                                  ],
+                                                                ),
+                                                              );
+                                                            }).toList(),
+                                                            Divider(
+                                                              color: Colors.black,
+                                                              thickness: 1,
+                                                            ),
+                                                            ListTile(
+                                                              title: Text('Genel Toplam'),
+                                                              subtitle: Text('${totalAmount.toStringAsFixed(2)} TL'),
+                                                            ),
+                                                          ],
+                                                        );
+                                                      }).toList(),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
                                         );
                                       },
                                       child: Text(userName),
@@ -264,13 +411,19 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                                 TableCell(
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: Text(salesAndQuotesData[userName]?['salesCount']?.toString() ?? '0'),
+                                    child: Text(
+                                        salesAndQuotesData[userName]?['salesCount']
+                                            ?.toString() ??
+                                            '0'),
                                   ),
                                 ),
                                 TableCell(
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: Text(salesAndQuotesData[userName]?['quotesCount']?.toString() ?? '0'),
+                                    child: Text(
+                                        salesAndQuotesData[userName]?['quotesCount']
+                                            ?.toString() ??
+                                            '0'),
                                   ),
                                 ),
                               ]);
@@ -287,37 +440,6 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         ),
       ),
       bottomNavigationBar: CustomBottomBar(),
-    );
-  }
-}
-
-class SalesDetailsScreen extends StatelessWidget {
-  final String userName;
-  final List<Map<String, dynamic>> salesDetails;
-
-  SalesDetailsScreen({required this.userName, required this.salesDetails});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('$userName - Satış Detayları'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView.builder(
-          itemCount: salesDetails.length,
-          itemBuilder: (context, index) {
-            var detail = salesDetails[index];
-            return Card(
-              child: ListTile(
-                title: Text('Ürün: ${detail['product']}'),
-                subtitle: Text('Tutar: ${detail['amount']} TL\nTarih: ${detail['date']}'),
-              ),
-            );
-          },
-        ),
-      ),
     );
   }
 }
