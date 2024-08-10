@@ -30,11 +30,17 @@ void main() async {
   );
   await initializeDateFormatting('tr', null);
   runApp(const MyApp());
+
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({Key? key}) : super(key: key);
 
+  void onCustomerSelected(Map<String, dynamic> customerData) {
+    // Burada müşteri seçildiğinde yapılacak işlemleri tanımlayabilirsiniz.
+    // Örneğin, müşteri bilgilerini bir listeye ekleyebilir veya ekranda gösterebilirsiniz.
+    print('Seçilen müşteri: ${customerData['customerName']}, Tutar: ${customerData['amount']}');
+  }
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
@@ -50,7 +56,8 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (context) => LoginScreen(),
           '/home': (context) => CustomHeaderScreen(),
-          '/scan': (context) => ScanScreen(),
+          '/scan': (context) => ScanScreen(onCustomerProcessed: onCustomerSelected),
+
           '/awaited_products': (context) => AwaitedProductsScreen(),
           '/faturala': (context) => FaturalaScreen(),
           '/yesterday': (context) => YesterdayScreen(),
@@ -97,4 +104,5 @@ class _AuthCheckState extends State<AuthCheck> {
   Widget build(BuildContext context) {
     return _isLoggedIn ? CustomHeaderScreen() : LoginScreen();
   }
+
 }

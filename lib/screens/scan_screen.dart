@@ -17,8 +17,15 @@ import 'package:open_file/open_file.dart'; // Dosya açma işlemleri için
 import 'pdf_sales_template.dart'; // PDF şablonu için
 import 'customer_details_screen.dart'; // Müşteri detayları ekranını import et
 import 'package:firebase_auth/firebase_auth.dart';
+import 'custom_header_screen.dart';
 import 'dart:ui' as ui; // Use ui for TextDirection
+import 'customer_selection_service.dart';
+
 class ScanScreen extends StatefulWidget {
+  final Function(Map<String, dynamic>) onCustomerProcessed;
+
+  ScanScreen({required this.onCustomerProcessed});
+
   @override
   _ScanScreenState createState() => _ScanScreenState();
 }
@@ -31,17 +38,15 @@ class _ScanScreenState extends State<ScanScreen> {
   String barcodeResult = "";
   String dolarKur = "";
   String euroKur = "";
-  String currentDate = DateFormat('d MMMM y', 'tr_TR').format(DateTime.now()); // Tarih formatı ayarlandı.
-
-
+  String currentDate = DateFormat('d MMMM y', 'tr_TR').format(
+      DateTime.now()); // Tarih formatı ayarlandı.
+  final CustomerSelectionService _customerSelectionService = CustomerSelectionService();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   User? currentUser;
-  String? customerName = 'Müşteri Adı'; // Müşteri adı, uygun bir yerden alınmalı
-  String? quoteNumber = 'Teklif Numarası'; // Teklif numarası, uygun bir yerden alınmalı
-
   List<Map<String, dynamic>> scannedProducts = [];
-  List<Map<String, dynamic>> originalProducts = []; // Orijinal ürün verileri listesi
+  List<Map<String, dynamic>> originalProducts = [
+  ]; // Orijinal ürün verileri listesi
   final FirestoreService firestoreService = FirestoreService();
 
   double toplamTutar = 0.0;
@@ -59,6 +64,7 @@ class _ScanScreenState extends State<ScanScreen> {
     initializeDovizKur();
     fetchCurrentUser();
   }
+
   Future<void> fetchCurrentUser() async {
     currentUser = _auth.currentUser;
   }
@@ -73,12 +79,11 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
-
-
   void filterCustomers(String query) {
     setState(() {
       filteredCustomers = customers
-          .where((customer) => customer.toLowerCase().contains(query.toLowerCase()))
+          .where((customer) =>
+          customer.toLowerCase().contains(query.toLowerCase()))
           .toList();
       if (!filteredCustomers.contains(selectedCustomer)) {
         selectedCustomer = null;
@@ -86,8 +91,35 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  double hesaplaToplamTutar() {
+    double toplamTutar = 0.0;
+
+    for (var product in scannedProducts) {
+      double fiyat = double.tryParse(
+          product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
+      toplamTutar += fiyat;
+    }
+
+    return toplamTutar;
+  }
+
+
+  void onCustomerSelected(String customerName) async {
+    double amount = hesaplaToplamTutar(); // Toplam tutarı hesapla
+    await FirebaseFirestore.instance.collection('customerSelections').add({
+      'customerName': customerName,
+      'amount': amount,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
+
+    // Firestore'a kaydedildikten sonra CustomHeaderScreen'de görünmesi için geri dön
+    Navigator.pop(context);
+  }
+
+
   Future<void> fetchCustomers() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection('veritabanideneme').get();
+    var querySnapshot = await FirebaseFirestore.instance.collection(
+        'veritabanideneme').get();
     var docs = querySnapshot.docs;
     var descriptions = docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
@@ -99,6 +131,7 @@ class _ScanScreenState extends State<ScanScreen> {
       filteredCustomers = descriptions;
     });
   }
+
   Future<void> processSale() async {
     if (selectedCustomer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,9 +144,9 @@ class _ScanScreenState extends State<ScanScreen> {
 
     String? fullName;
 
-    // Mevcut kullanıcının tam adını veritabanından çekiyoruz
     if (currentUser != null) {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(
+          currentUser.uid).get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
       } else {
@@ -123,12 +156,14 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     }
 
-    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
-    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
+    var customerCollection = FirebaseFirestore.instance.collection(
+        'customerDetails');
+    var querySnapshot = await customerCollection.where(
+        'customerName', isEqualTo: selectedCustomer).get();
 
-    // Sadece dolu ürünleri işleme al
     var processedProducts = scannedProducts.map((product) {
-      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double unitPrice = double.tryParse(
+          product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
       double totalPrice = unitPrice * quantity;
 
@@ -143,16 +178,17 @@ class _ScanScreenState extends State<ScanScreen> {
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
         'orderMethod': 'Telefon',
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(
+            DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
-      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
+      var existingProducts = List<Map<String, dynamic>>.from(
+          querySnapshot.docs.first['products'] ?? []);
 
-      // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
       existingProducts.addAll(processedProducts);
 
       try {
@@ -164,7 +200,7 @@ class _ScanScreenState extends State<ScanScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Veri güncellenirken hata oluştu')),
         );
-        return; // Hata durumunda işlemden çık
+        return;
       }
     } else {
       try {
@@ -177,46 +213,32 @@ class _ScanScreenState extends State<ScanScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Veri eklenirken hata oluştu')),
         );
-        return; // Hata durumunda işlemden çık
+        return;
       }
     }
 
-    // Kullanıcıya ait satış bilgilerini güncelle
     try {
       await FirebaseFirestore.instance.collection('sales').add({
         'userId': currentUser!.uid,
         'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
         'customerName': selectedCustomer,
         'amount': toplamTutar,
-        'products': processedProducts, // Burada yalnızca işlenen ürünleri kaydediyoruz
+        'products': processedProducts,
       });
     } catch (e) {
       print('Satış verisi ekleme hatası: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Satış verisi eklenirken hata oluştu')),
       );
-      return; // Hata durumunda işlemden çık
+      return;
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
     );
 
-    // Müşteri detayları ekranına yönlendir
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
-      ),
-    );
+    Navigator.pop(context); // sayfayı kapatır ve önceki sayfaya geri döner
   }
-
-
-
-
-
-
-
 
   Future<void> fetchDovizKur() async {
     DovizService dovizService = DovizService();
@@ -266,36 +288,46 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
-  Future<void> applyDiscountToProduct(Map<String, dynamic> productData, String brand) async {
+  Future<void> applyDiscountToProduct(Map<String, dynamic> productData,
+      String brand) async {
     if (selectedCustomer == null) return;
 
-    var customerDiscount = await firestoreService.getCustomerDiscount(selectedCustomer!);
+    var customerDiscount = await firestoreService.getCustomerDiscount(
+        selectedCustomer!);
     String discountLevel = customerDiscount['iskonto'] ?? '';
 
     double priceInTl = 0.0;
-    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ?? 0.0;
+    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ??
+        0.0;
     String currency = productData['Doviz']?.toString() ?? '';
 
     if (currency == 'Euro') {
-      priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+      priceInTl =
+          price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
     } else if (currency == 'Dolar') {
-      priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+      priceInTl =
+          price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
     } else {
       priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
     }
 
     if (discountLevel.isNotEmpty) {
-      var discountData = await firestoreService.getDiscountRates(discountLevel, brand);
+      var discountData = await firestoreService.getDiscountRates(
+          discountLevel, brand);
       double discountRate = discountData['rate'] ?? 0.0;
       double discountedPrice = priceInTl * (1 - (discountRate / 100));
 
       productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
       productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (discountedPrice * (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (discountedPrice *
+          (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1))
+          .toStringAsFixed(2);
     } else {
       productData['İskonto'] = '0%';
       productData['Adet Fiyatı'] = priceInTl.toStringAsFixed(2);
-      productData['Toplam Fiyat'] = (priceInTl * (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
+      productData['Toplam Fiyat'] = (priceInTl *
+          (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1))
+          .toStringAsFixed(2);
     }
   }
 
@@ -328,13 +360,16 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> addProductToTable(Map<String, dynamic> productData) async {
     double priceInTl = 0.0;
-    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ?? 0.0;
+    double price = double.tryParse(productData['Fiyat']?.toString() ?? '0') ??
+        0.0;
     String currency = productData['Doviz']?.toString() ?? '';
 
     if (currency == 'Euro') {
-      priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+      priceInTl =
+          price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
     } else if (currency == 'Dolar') {
-      priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+      priceInTl =
+          price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
     } else {
       priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
     }
@@ -343,7 +378,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
     // Müşteri seçilmişse iskonto uygula
     if (selectedCustomer != null) {
-      await applyDiscountToProduct(productData, productData['Marka']?.toString() ?? '');
+      await applyDiscountToProduct(
+          productData, productData['Marka']?.toString() ?? '');
     } else {
       productData['Toplam Fiyat'] = (priceInTl * 1).toStringAsFixed(2);
     }
@@ -365,15 +401,17 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
-
   Future<void> updateProductsForCustomer() async {
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = originalProducts[i];
       await applyDiscountToProduct(productData, productData['Marka']);
-      double adet = double.tryParse(scannedProducts[i]['Adet']?.toString() ?? '1') ?? 1;
+      double adet = double.tryParse(
+          scannedProducts[i]['Adet']?.toString() ?? '1') ?? 1;
       setState(() {
         scannedProducts[i]['Adet Fiyatı'] = productData['Adet Fiyatı'];
-        scannedProducts[i]['Toplam Fiyat'] = (adet * (double.tryParse(productData['Adet Fiyatı'] ?? '0') ?? 0)).toStringAsFixed(2);
+        scannedProducts[i]['Toplam Fiyat'] =
+            (adet * (double.tryParse(productData['Adet Fiyatı'] ?? '0') ?? 0))
+                .toStringAsFixed(2);
         scannedProducts[i]['İskonto'] = productData['İskonto'];
       });
     }
@@ -383,9 +421,11 @@ class _ScanScreenState extends State<ScanScreen> {
   void updateQuantity(int index, String quantity) {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
-      double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double price = double.tryParse(
+          scannedProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       scannedProducts[index]['Adet'] = quantity;
-      scannedProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
+      scannedProducts[index]['Toplam Fiyat'] =
+          (adet * price).toStringAsFixed(2);
       updateTotalAndVat();
     });
   }
@@ -423,10 +463,8 @@ class _ScanScreenState extends State<ScanScreen> {
 
   void updateTotalAndVat() {
     toplamTutar = 0.0;
-
-    // Sadece gerçek ürünlerin toplamını hesapla
     scannedProducts.forEach((product) {
-      if (product['Kodu'] != '' && product['Detay'] != '' && product['Adet'] != '') {
+      if (product['Kodu']?.toString() != '' && product['Toplam Fiyat']?.toString() != '') {
         toplamTutar += double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
       }
     });
@@ -434,20 +472,42 @@ class _ScanScreenState extends State<ScanScreen> {
     kdv = toplamTutar * 0.20;
     genelToplam = toplamTutar + kdv;
 
-    // UI üzerinde göstermek için güncellemeleri yap
     setState(() {
-      // scannedProducts listesini değiştirmiyoruz
-    });
+      // Firestore'da toplamı güncelleyin
+      updateTotalInFirestore();
 
-    print('Toplam Tutar: $toplamTutar');
-    print('KDV: $kdv');
-    print('Genel Toplam: $genelToplam');
+      scannedProducts.removeWhere((product) =>
+      (product['Adet Fiyatı']?.toString().contains('Toplam Tutar') ?? false) ||
+          (product['Adet Fiyatı']?.toString().contains('KDV %20') ?? false) ||
+          (product['Adet Fiyatı']?.toString().contains('Genel Toplam') ?? false));
+
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Toplam Tutar',
+        'Toplam Fiyat': toplamTutar.toStringAsFixed(2),
+      });
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'KDV %20',
+        'Toplam Fiyat': kdv.toStringAsFixed(2),
+      });
+      scannedProducts.add({
+        'Kodu': '',
+        'Detay': '',
+        'Adet': '',
+        'Adet Fiyatı': 'Genel Toplam',
+        'Toplam Fiyat': genelToplam.toStringAsFixed(2),
+      });
+    });
   }
 
 
-
-
-  Future<void> saveToCustomerDetails(String whoTook, String? recipient, String? contactPerson, String orderMethod) async {
+  Future<void> saveToCustomerDetails(String whoTook, String? recipient,
+      String? contactPerson, String orderMethod) async {
     if (selectedCustomer == null) return;
 
     User? currentUser = FirebaseAuth.instance.currentUser;
@@ -456,17 +516,21 @@ class _ScanScreenState extends State<ScanScreen> {
 
     // Mevcut kullanıcının tam adını veritabanından çekiyoruz
     if (currentUser != null) {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(
+          currentUser.uid).get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
       }
     }
 
-    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
-    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
+    var customerCollection = FirebaseFirestore.instance.collection(
+        'customerDetails');
+    var querySnapshot = await customerCollection.where(
+        'customerName', isEqualTo: selectedCustomer).get();
 
     var processedProducts = scannedProducts.map((product) {
-      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double unitPrice = double.tryParse(
+          product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
       double totalPrice = unitPrice * quantity;
 
@@ -481,15 +545,16 @@ class _ScanScreenState extends State<ScanScreen> {
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
         'orderMethod': 'Telefon',
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(
+            DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
-
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
-      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
+      var existingProducts = List<Map<String, dynamic>>.from(
+          querySnapshot.docs.first['products'] ?? []);
 
       // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
       for (var product in processedProducts) {
@@ -514,14 +579,11 @@ class _ScanScreenState extends State<ScanScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
+        builder: (context) =>
+            CustomerDetailsScreen(customerName: selectedCustomer!),
       ),
     );
   }
-
-
-
-
 
   Future<void> showProcessingDialog() async {
     String? whoTook;
@@ -568,18 +630,21 @@ class _ScanScreenState extends State<ScanScreen> {
                       Column(
                         children: [
                           TextField(
-                            decoration: InputDecoration(labelText: 'Müşteri İsmi'),
+                            decoration: InputDecoration(
+                                labelText: 'Müşteri İsmi'),
                             controller: recipientController,
                           ),
                           TextField(
-                            decoration: InputDecoration(labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
+                            decoration: InputDecoration(
+                                labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
                             controller: contactPersonController,
                           ),
                         ],
                       ),
                     if (whoTook == 'Kendi Firması')
                       TextField(
-                        decoration: InputDecoration(labelText: 'Teslim Alan Çalışan İsmi'),
+                        decoration: InputDecoration(
+                            labelText: 'Teslim Alan Çalışan İsmi'),
                         controller: recipientController,
                       ),
                     SizedBox(height: 20),
@@ -637,7 +702,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     if (orderMethod == 'Diğer')
                       TextField(
                         controller: otherMethodController,
-                        decoration: InputDecoration(labelText: 'Sipariş Şekli (Diğer)'),
+                        decoration: InputDecoration(
+                            labelText: 'Sipariş Şekli (Diğer)'),
                       ),
                   ],
                 ),
@@ -656,12 +722,15 @@ class _ScanScreenState extends State<ScanScreen> {
                         recipientController.text.isNotEmpty &&
                         contactPersonController.text.isNotEmpty &&
                         orderMethod != null &&
-                        (orderMethod != 'Diğer' || otherMethodController.text.isNotEmpty)) {
+                        (orderMethod != 'Diğer' ||
+                            otherMethodController.text.isNotEmpty)) {
                       saveToCustomerDetails(
                         whoTook!,
                         recipientController.text,
                         contactPersonController.text,
-                        orderMethod == 'Diğer' ? otherMethodController.text : orderMethod!,
+                        orderMethod == 'Diğer'
+                            ? otherMethodController.text
+                            : orderMethod!,
                       );
                       Navigator.of(context).pop();
                     } else {
@@ -734,7 +803,8 @@ class _ScanScreenState extends State<ScanScreen> {
     DateTime current = start;
     while (current.isBefore(end)) {
       current = current.add(Duration(days: 1));
-      if (current.weekday != DateTime.saturday && current.weekday != DateTime.sunday) {
+      if (current.weekday != DateTime.saturday &&
+          current.weekday != DateTime.sunday) {
         count++;
       }
     }
@@ -781,7 +851,8 @@ class _ScanScreenState extends State<ScanScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CustomerDetailsScreen(customerName: selectedCustomer!),
+        builder: (context) =>
+            CustomerDetailsScreen(customerName: selectedCustomer!),
       ),
     );
   }
@@ -802,6 +873,44 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+  void updateTotalInFirestore() {
+    FirebaseFirestore.instance.collection('selectedCustomer').doc('current').update({
+      'totalAmount': genelToplam.toStringAsFixed(2),
+    });
+  }
+
+
+  void _selectCustomer(String customerName) {
+    // Firestore'a seçilen müşteri adını kaydet
+    FirebaseFirestore.instance
+        .collection('selectedCustomer')
+        .doc('current')
+        .set({'customerName': customerName});
+
+    print("Müşteri Seçildi: $customerName");
+  }
+
+  void _processCustomer(String customerName, double amount) {
+    widget.onCustomerProcessed({
+      'customerName': customerName,
+      'amount': amount,
+    });
+  }
+
+  void _handleCustomerSelection(String customerName) {
+    setState(() {
+      selectedCustomer = customerName;
+      // Seçilen müşteri bilgisini Firebase'e kaydet
+      FirebaseFirestore.instance
+          .collection('selectedCustomer')
+          .doc('current')
+          .set({'customerName': customerName});
+    });
+  }
+
+  void handleProcessCompletion(String customerName, double amount) {
+    _processCustomer(customerName, amount);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -815,7 +924,8 @@ class _ScanScreenState extends State<ScanScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
-                icon: Icon(CupertinoIcons.barcode, size: 24, color: colorTheme5),
+                icon: Icon(
+                    CupertinoIcons.barcode, size: 24, color: colorTheme5),
                 onPressed: scanBarcode,
               ),
               Row(
@@ -832,43 +942,15 @@ class _ScanScreenState extends State<ScanScreen> {
                       color: Colors.grey,
                     ),
                     onChanged: (String? newValue) {
-                      if (newValue != selectedCustomer) {
-                        if (scannedProducts.isNotEmpty) {
-                          showDialog(
-                            context: context,
-                            builder: (BuildContext context) {
-                              return AlertDialog(
-                                title: Text('Müşteri Değiştir'),
-                                content: Text('Müşteriyi değiştirmek istediğinizden emin misiniz?'),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text('Hayır'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        selectedCustomer = newValue;
-                                        updateProductsForCustomer();
-                                      });
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: Text('Evet'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        } else {
-                          setState(() {
-                            selectedCustomer = newValue;
-                          });
-                        }
+                      setState(() {
+                        selectedCustomer = newValue;
+                      });
+                      if (newValue != null) {
+                        _selectCustomer(newValue);
                       }
                     },
-                    items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
+                    items: filteredCustomers.map<DropdownMenuItem<String>>((
+                        String value) {
                       return DropdownMenuItem<String>(
                         value: value,
                         child: Text(value),
@@ -928,7 +1010,8 @@ class _ScanScreenState extends State<ScanScreen> {
                   ],
                   rows: scannedProducts.map((product) {
                     int index = scannedProducts.indexOf(product);
-                    bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+                    bool isTotalRow = product['Adet Fiyatı']?.toString() ==
+                        'Toplam Tutar' ||
                         product['Adet Fiyatı']?.toString() == 'KDV %20' ||
                         product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
@@ -946,7 +1029,8 @@ class _ScanScreenState extends State<ScanScreen> {
                           onChanged: (value) {
                             updateQuantity(index, value);
                           },
-                          controller: TextEditingController(text: product['Adet']?.toString() ?? ''),
+                          controller: TextEditingController(
+                              text: product['Adet']?.toString() ?? ''),
                           onSubmitted: (value) {
                             handleEditSubmit(index);
                           },
@@ -966,8 +1050,10 @@ class _ScanScreenState extends State<ScanScreen> {
                                 setState(() {
                                   isEditing = true;
                                   editingIndex = index;
-                                  originalProductData = Map<String, dynamic>.from(product);
-                                  quantityController.text = product['Adet']?.toString() ?? '';
+                                  originalProductData =
+                                  Map<String, dynamic>.from(product);
+                                  quantityController.text =
+                                      product['Adet']?.toString() ?? '';
                                 });
                               },
                             ),
@@ -975,7 +1061,8 @@ class _ScanScreenState extends State<ScanScreen> {
                               Row(
                                 children: [
                                   IconButton(
-                                    icon: Icon(Icons.check, color: Colors.green),
+                                    icon: Icon(
+                                        Icons.check, color: Colors.green),
                                     onPressed: () {
                                       handleEditSubmit(index);
                                     },
@@ -1003,6 +1090,28 @@ class _ScanScreenState extends State<ScanScreen> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Toplam Tutar: ${toplamTutar.toStringAsFixed(2)} TL',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8.0),
+                Text(
+                  'KDV: ${kdv.toStringAsFixed(2)} TL',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8.0),
+                Text(
+                  'Genel Toplam: ${genelToplam.toStringAsFixed(2)} TL',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 5.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
@@ -1020,7 +1129,6 @@ class _ScanScreenState extends State<ScanScreen> {
                 ElevatedButton(
                   onPressed: saveAsPDF,
                   child: Text('PDF\'e Dönüştür'),
-
                 ),
               ],
             ),
@@ -1067,7 +1175,8 @@ class _ScanScreenState extends State<ScanScreen> {
           }
 
           // Adjust font size to fit all texts within the screen width
-          while (calculateTotalTextWidth(fontSize) > screenWidth && fontSize > 10) {
+          while (calculateTotalTextWidth(fontSize) > screenWidth &&
+              fontSize > 10) {
             fontSize -= 1;
           }
 
@@ -1077,9 +1186,12 @@ class _ScanScreenState extends State<ScanScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('1 USD: $dolarKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
-                Text(currentDate, style: TextStyle(fontSize: fontSize, color: Colors.black)),
-                Text('1 EUR: $euroKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text('1 USD: $dolarKur',
+                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text(currentDate,
+                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text('1 EUR: $euroKur',
+                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
               ],
             ),
           );
@@ -1088,5 +1200,4 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
-
-  }
+}
