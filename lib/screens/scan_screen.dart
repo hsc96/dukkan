@@ -153,9 +153,13 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> processSale() async {
     if (selectedCustomer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lütfen bir müşteri seçin')),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Lütfen bir müşteri seçin')),
+          );
+        }
+      });
       return;
     }
 
@@ -164,25 +168,26 @@ class _ScanScreenState extends State<ScanScreen> {
     String? fullName;
 
     if (currentUser != null) {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(
-          currentUser.uid).get();
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Kullanıcı bilgisi alınamadı')),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Kullanıcı bilgisi alınamadı')),
+            );
+          }
+        });
+        return;
       }
     }
 
-    var customerCollection = FirebaseFirestore.instance.collection(
-        'customerDetails');
-    var querySnapshot = await customerCollection.where(
-        'customerName', isEqualTo: selectedCustomer).get();
+    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
     var processedProducts = scannedProducts.map((product) {
-      double unitPrice = double.tryParse(
-          product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
       double totalPrice = unitPrice * quantity;
 
@@ -197,28 +202,28 @@ class _ScanScreenState extends State<ScanScreen> {
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
         'orderMethod': 'Telefon',
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(
-            DateTime.now()),
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
-      var existingProducts = List<Map<String, dynamic>>.from(
-          querySnapshot.docs.first['products'] ?? []);
+      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
 
       existingProducts.addAll(processedProducts);
 
       try {
-        await docRef.update({
-          'products': existingProducts,
-        });
+        await docRef.update({'products': existingProducts});
       } catch (e) {
         print('Firestore güncelleme hatası: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Veri güncellenirken hata oluştu')),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Veri güncellenirken hata oluştu')),
+            );
+          }
+        });
         return;
       }
     } else {
@@ -229,9 +234,13 @@ class _ScanScreenState extends State<ScanScreen> {
         });
       } catch (e) {
         print('Firestore ekleme hatası: $e');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Veri eklenirken hata oluştu')),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Veri eklenirken hata oluştu')),
+            );
+          }
+        });
         return;
       }
     }
@@ -246,39 +255,33 @@ class _ScanScreenState extends State<ScanScreen> {
       });
     } catch (e) {
       print('Satış verisi ekleme hatası: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Satış verisi eklenirken hata oluştu')),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Satış verisi eklenirken hata oluştu')),
+          );
+        }
+      });
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
+        );
+      }
+    });
 
     // TemporarySelections içindeki verileri temizle
     await _customerSelectionService.clearTemporaryData();
 
-    // ScanScreen'i sıfırla
-    setState(() {
-      selectedCustomer = null;
-      scannedProducts.clear();
-      originalProducts.clear();
-      toplamTutar = 0.0;
-      kdv = 0.0;
-      genelToplam = 0.0;
-    });
-
-    // Firestore'daki current document'ı güncelle
-    FirebaseFirestore.instance.collection('selectedCustomer')
-        .doc('current')
-        .set({
-      'customerName': '',
-      'totalAmount': '0.00',
-    });
-
-    Navigator.pop(context); // sayfayı kapatır ve önceki sayfaya geri döner
+    // Verileri temizle
+    clearScreen(); // Verileri kaydettikten sonra ekranı temizle
   }
+
+
+
 
   Future<void> fetchDovizKur() async {
     DovizService dovizService = DovizService();
@@ -1075,6 +1078,26 @@ class _ScanScreenState extends State<ScanScreen> {
       );
     }
   }
+  void clearScreen() {
+    setState(() {
+      selectedCustomer = null;
+      scannedProducts.clear();
+      originalProducts.clear();
+      toplamTutar = 0.0;
+      kdv = 0.0;
+      genelToplam = 0.0;
+    });
+
+    // Firestore'daki temporarySelections koleksiyonunu da temizle
+    FirebaseFirestore.instance
+        .collection('temporarySelections')
+        .doc('current')
+        .set({
+      'customerName': '',
+      'products': [],
+    });
+  }
+
 
 
   @override
@@ -1311,7 +1334,10 @@ class _ScanScreenState extends State<ScanScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ElevatedButton(
-                  onPressed: generateQuote,
+                  onPressed: () async {
+                    await generateQuote();
+                    clearScreen(); // Ekranı temizle
+                  },
                   child: Text('Teklif Ver'),
                 ),
                 ElevatedButton(
@@ -1319,6 +1345,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     await showProcessingDialog();
                     await processSale();
                     await clearSelections();
+                    clearScreen(); // Ekranı temizle
                   },
                   child: Text('Hesaba İşle'),
                 ),
@@ -1326,6 +1353,7 @@ class _ScanScreenState extends State<ScanScreen> {
                   onPressed: () async {
                     await processCashPayment();
                     await clearSelections();
+                    clearScreen(); // Ekranı temizle
                   },
                   child: Text('Nakit Tahsilat'),
                 ),
@@ -1338,6 +1366,7 @@ class _ScanScreenState extends State<ScanScreen> {
           ),
         ],
       ),
+
       bottomNavigationBar: CustomBottomBar(),
       bottomSheet: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
