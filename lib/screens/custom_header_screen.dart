@@ -25,6 +25,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   void initState() {
     super.initState();
     fetchUsers();
+
   }
 
   Future<void> fetchUsers() async {
@@ -170,6 +171,8 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         .snapshots();
   }
 
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -180,8 +183,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         child: Stack(
           children: [
             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection(
-                  'temporarySelections').snapshots(),
+              stream: FirebaseFirestore.instance.collection('temporarySelections').snapshots(),
               builder: (context, snapshot) {
                 if (!snapshot.hasData) {
                   return Center(child: CircularProgressIndicator());
@@ -190,8 +192,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 List<Map<String, String>> temporarySelections = [];
 
                 for (var doc in snapshot.data!.docs) {
-                  String customerName = doc.data()['customerName'] ??
-                      'Müşteri Seçilmedi';
+                  String customerName = doc.data()['customerName'] ?? 'Müşteri Seçilmedi';
                   String totalAmount = '0.00 TL';
 
                   var products = doc.data()['products'] as List<dynamic>?;
@@ -205,6 +206,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     }
                   }
 
+                  // temporarySelections için güncelleme yapalım
                   temporarySelections.add({
                     'customerName': customerName,
                     'totalAmount': totalAmount,
@@ -222,60 +224,55 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                       children: temporarySelections.map((customer) {
                         return GestureDetector(
                           onTap: () async {
-                            // Veriyi çekmeden önce eski veriyi temizle
-                            setState(() {
-                              selectedCustomers.clear();
-                            });
+                            // Veriyi çekmek için currentX alanına göre belirlenecek
                             String collectionPath = 'temporarySelections';
-                            String documentId = 'current';
+                            String? documentId = customer['field']; // Müşteriye göre currentX field'ı
 
-                            // Veriyi anlık olarak çek
-                            DocumentSnapshot<Map<String, dynamic>> currentData = await FirebaseFirestore.instance
-                                .collection('temporarySelections') // Kullanılan koleksiyonu burada yazdırıyoruz
-                                .doc('current')
-                                .get();
+                            if (documentId != null) {
+                              DocumentSnapshot<Map<String, dynamic>> currentData = await FirebaseFirestore.instance
+                                  .collection(collectionPath)
+                                  .doc(documentId)
+                                  .get();
 
-                            // Konsola veri çekilen koleksiyonu yazdır
-                            print('Veri şu adresten çekiliyor: $collectionPath/$documentId');
+                              if (currentData.exists) {
+                                String customerName = currentData.data()?['customerName'] ?? 'Müşteri Seçilmedi';
+                                String totalAmount = '0.00 TL';
 
-                            if (currentData.exists) {
-                              String customerName = currentData.data()?['customerName'] ?? 'Müşteri Seçilmedi';
-                              String totalAmount = '0.00 TL';
-
-                              var products = currentData.data()?['products'] as List<dynamic>?;
-                              if (products != null) {
-                                var genelToplamEntry = products.firstWhere(
-                                      (product) => product['Adet Fiyatı'] == 'Genel Toplam',
-                                  orElse: () => null,
-                                );
-                                if (genelToplamEntry != null) {
-                                  totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
+                                var products = currentData.data()?['products'] as List<dynamic>?;
+                                if (products != null) {
+                                  var genelToplamEntry = products.firstWhere(
+                                        (product) => product['Adet Fiyatı'] == 'Genel Toplam',
+                                    orElse: () => null,
+                                  );
+                                  if (genelToplamEntry != null) {
+                                    totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
+                                  }
                                 }
-                              }
 
-                              // Yeni veriyi güncelle
-                              setState(() {
-                                selectedCustomers.add({
-                                  'customerName': customerName,
-                                  'totalAmount': totalAmount,
+                                // Seçilen müşteri bilgilerini güncelle
+                                setState(() {
+                                  selectedCustomers.clear();
+                                  selectedCustomers.add({
+                                    'customerName': customerName,
+                                    'totalAmount': totalAmount,
+                                  });
                                 });
-                              });
 
-                              // ScanScreen sayfasına git
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => ScanScreen(onCustomerProcessed: (data) {}),
-                                ),
-                              );
+                                // ScanScreen sayfasına git
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => ScanScreen(onCustomerProcessed: (data) {}),
+                                  ),
+                                );
+                              }
+                            } else {
+                              print("Müşteri field bilgisi bulunamadı.");
                             }
                           },
                           child: Container(
                             margin: const EdgeInsets.symmetric(horizontal: 8.0),
-                            width: (MediaQuery
-                                .of(context)
-                                .size
-                                .width - 56) / 4,
+                            width: (MediaQuery.of(context).size.width - 56) / 4,
                             child: Card(
                               color: const Color(0xFF0C2B40),
                               shape: RoundedRectangleBorder(
@@ -309,21 +306,50 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                             ),
                           ),
                         );
+
                       }).toList(),
                     ),
                   ),
                 );
               },
             ),
+
+
             Positioned(
               top: 180.0,
-              left: MediaQuery
-                  .of(context)
-                  .size
-                  .width / 2 - 60,
+              left: MediaQuery.of(context).size.width / 2 - 60,
               child: GestureDetector(
-                onTap: () {
-                  Navigator.pushNamed(context, '/scan');
+                onTap: () async {
+                  // Yeni müşteri işlemleri için currentX kullanılacak
+                  var temporarySelections = FirebaseFirestore.instance.collection('temporarySelections');
+                  var querySnapshot = await temporarySelections.get();
+
+                  List<String> existingCurrentFields = querySnapshot.docs.map((doc) => doc.id).toList();
+
+                  int maxCurrentNumber = 1;
+
+                  for (var field in existingCurrentFields) {
+                    if (field.startsWith('current')) {
+                      String numberStr = field.replaceAll('current', '');
+                      int? number = int.tryParse(numberStr);
+                      if (number != null && number >= maxCurrentNumber) {
+                        maxCurrentNumber = number + 1;
+                      }
+                    }
+                  }
+
+                  String newCurrentField = 'current$maxCurrentNumber';
+
+                  // Yeni müşteri için yeni currentX alanını oluştur
+                  await temporarySelections.doc(newCurrentField).set({
+                    'customerName': '',
+                    'products': [],
+                  });
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => ScanScreen(onCustomerProcessed: (data) {})),
+                  );
                 },
                 child: Container(
                   decoration: BoxDecoration(
@@ -359,6 +385,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 ),
               ),
             ),
+
             Positioned(
               top: 320.0,
               left: 0.0,
