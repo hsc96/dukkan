@@ -4,8 +4,9 @@ import 'package:intl/intl.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
-import 'package:flutter/cupertino.dart'; // CupertinoIcons için gerekli import
-import '../utils/colors.dart'; // Renk tanımlarını içe aktar
+import 'scan_screen.dart';
+import 'package:flutter/cupertino.dart';
+import '../utils/colors.dart';
 
 class CustomHeaderScreen extends StatefulWidget {
   @override
@@ -16,6 +17,9 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   List<Map<String, dynamic>> users = [];
   Map<String, Map<String, dynamic>> salesAndQuotesData = {};
   Map<String, Map<String, dynamic>> previousSalesData = {};
+  List<Map<String, String>> selectedCustomers = [];
+  List<Map<String, String>> temporarySelections = []; // Define the list here
+
 
   @override
   void initState() {
@@ -144,15 +148,27 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
     }
   }
 
-  // Seçilen müşteri bilgisini almak için Stream
-  Stream<DocumentSnapshot<Map<String, dynamic>>> getSelectedCustomerStream() {
+  Stream<DocumentSnapshot<Map<String, dynamic>>> gettemporarySelections() {
     return FirebaseFirestore.instance
-        .collection('selectedCustomer')
+        .collection('temporarySelections')
         .doc('current')
         .snapshots();
   }
 
+  void addNewCustomer(String customerName, String totalAmount) {
+    setState(() {
+      temporarySelections.add({
+        'customerName': customerName,
+        'totalAmount': totalAmount,
+      });
+    });
+  }
 
+  Stream<QuerySnapshot<Map<String, dynamic>>> gettemporarySelectionsStream() {
+    return FirebaseFirestore.instance
+        .collection('temporarySelections')
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -163,15 +179,36 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         color: colorTheme2,
         child: Stack(
           children: [
-            StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-              stream: getSelectedCustomerStream(),
+            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection(
+                  'temporarySelections').snapshots(),
               builder: (context, snapshot) {
-                String selectedCustomerName = 'Müşteri Seçilmedi';
-                String totalAmount = '0.00 TL';
+                if (!snapshot.hasData) {
+                  return Center(child: CircularProgressIndicator());
+                }
 
-                if (snapshot.hasData && snapshot.data?.data() != null) {
-                  selectedCustomerName = snapshot.data!.data()!['customerName'] ?? 'Müşteri Seçilmedi';
-                  totalAmount = snapshot.data!.data()!['totalAmount'] ?? '0.00 TL';
+                List<Map<String, String>> temporarySelections = [];
+
+                for (var doc in snapshot.data!.docs) {
+                  String customerName = doc.data()['customerName'] ??
+                      'Müşteri Seçilmedi';
+                  String totalAmount = '0.00 TL';
+
+                  var products = doc.data()['products'] as List<dynamic>?;
+                  if (products != null) {
+                    var genelToplamEntry = products.firstWhere(
+                          (product) => product['Adet Fiyatı'] == 'Genel Toplam',
+                      orElse: () => null,
+                    );
+                    if (genelToplamEntry != null) {
+                      totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
+                    }
+                  }
+
+                  temporarySelections.add({
+                    'customerName': customerName,
+                    'totalAmount': totalAmount,
+                  });
                 }
 
                 return Positioned(
@@ -182,43 +219,97 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     scrollDirection: Axis.horizontal,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 8.0),
-                          width: (MediaQuery.of(context).size.width - 56) / 4,
-                          child: Card(
-                            color: const Color(0xFF0C2B40),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 5,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SizedBox(height: 12.0),
-                                Text(
-                                  selectedCustomerName,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                  textAlign: TextAlign.center,
+                      children: temporarySelections.map((customer) {
+                        return GestureDetector(
+                          onTap: () async {
+                            // Veriyi çekmeden önce eski veriyi temizle
+                            setState(() {
+                              selectedCustomers.clear();
+                            });
+                            String collectionPath = 'temporarySelections';
+                            String documentId = 'current';
+
+                            // Veriyi anlık olarak çek
+                            DocumentSnapshot<Map<String, dynamic>> currentData = await FirebaseFirestore.instance
+                                .collection('temporarySelections') // Kullanılan koleksiyonu burada yazdırıyoruz
+                                .doc('current')
+                                .get();
+
+                            // Konsola veri çekilen koleksiyonu yazdır
+                            print('Veri şu adresten çekiliyor: $collectionPath/$documentId');
+
+                            if (currentData.exists) {
+                              String customerName = currentData.data()?['customerName'] ?? 'Müşteri Seçilmedi';
+                              String totalAmount = '0.00 TL';
+
+                              var products = currentData.data()?['products'] as List<dynamic>?;
+                              if (products != null) {
+                                var genelToplamEntry = products.firstWhere(
+                                      (product) => product['Adet Fiyatı'] == 'Genel Toplam',
+                                  orElse: () => null,
+                                );
+                                if (genelToplamEntry != null) {
+                                  totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
+                                }
+                              }
+
+                              // Yeni veriyi güncelle
+                              setState(() {
+                                selectedCustomers.add({
+                                  'customerName': customerName,
+                                  'totalAmount': totalAmount,
+                                });
+                              });
+
+                              // ScanScreen sayfasına git
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ScanScreen(onCustomerProcessed: (data) {}),
                                 ),
-                                SizedBox(height: 4.0),
-                                Text(
-                                  'Toplam Tutar: $totalAmount',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
+                              );
+                            }
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 8.0),
+                            width: (MediaQuery
+                                .of(context)
+                                .size
+                                .width - 56) / 4,
+                            child: Card(
+                              color: const Color(0xFF0C2B40),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 5,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(height: 12.0),
+                                  Text(
+                                    customer['customerName']!,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    textAlign: TextAlign.center,
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
+                                  SizedBox(height: 4.0),
+                                  Text(
+                                    'Toplam Tutar: ${customer['totalAmount']}',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        );
+                      }).toList(),
                     ),
                   ),
                 );
@@ -373,8 +464,8 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                                                   Expanded(
                                                     child: ListView(
                                                       children: mergedSalesDetails
-                                                          .entries
-                                                          .map<Widget>((entry) {
+                                                          .entries.map<Widget>((
+                                                          entry) {
                                                         String customerName = entry
                                                             .key;
                                                         var details = entry
@@ -396,20 +487,24 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                                                             ...products.map<
                                                                 Widget>((
                                                                 product) {
-                                                              String productName = product['name'] ??
-                                                                  'Ürün Bilgisi Yok';
-                                                              double unitPrice = product['unitPrice'] ??
-                                                                  0.0;
+                                                              String productName =
+                                                                  product['name'] ??
+                                                                      'Ürün Bilgisi Yok';
+                                                              double unitPrice =
+                                                                  product['unitPrice'] ??
+                                                                      0.0;
                                                               int quantity = product['quantity'] ??
                                                                   0;
-                                                              double totalPrice = product['totalPrice'] ??
-                                                                  0.0;
+                                                              double totalPrice =
+                                                                  product['totalPrice'] ??
+                                                                      0.0;
 
                                                               return ListTile(
                                                                 title: Text(
                                                                     productName),
                                                                 subtitle: Column(
-                                                                  crossAxisAlignment: CrossAxisAlignment
+                                                                  crossAxisAlignment:
+                                                                  CrossAxisAlignment
                                                                       .start,
                                                                   children: [
                                                                     Text(
