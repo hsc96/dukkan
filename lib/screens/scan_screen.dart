@@ -22,8 +22,13 @@ import 'customer_selection_service.dart';
 
 class ScanScreen extends StatefulWidget {
   final Function(Map<String, dynamic>) onCustomerProcessed;
+  final String? documentId; // Make it nullable
 
-  ScanScreen({required this.onCustomerProcessed});
+
+  ScanScreen({
+    required this.onCustomerProcessed,
+    this.documentId, // documentId is now optional
+  });
 
   @override
   _ScanScreenState createState() => _ScanScreenState();
@@ -56,33 +61,32 @@ class _ScanScreenState extends State<ScanScreen> {
   int editingIndex = -1;
   Map<String, dynamic>? originalProductData;
   TextEditingController quantityController = TextEditingController();
-
   @override
   void initState() {
     super.initState();
-    fetchCustomers(); // Mevcut müşterileri çek
-    initializeDovizKur(); // Döviz kurlarını başlat
-    fetchCurrentUser(); // Mevcut kullanıcıyı çek
+    fetchCustomers();           // Mevcut müşterileri çek
+    initializeDovizKur();       // Döviz kurlarını başlat
+    fetchCurrentUser();         // Mevcut kullanıcıyı çek
 
     // Firestore Stream dinleyici ekleyin
-    FirebaseFirestore.instance.collection('temporarySelections')
-        .doc('current')
+    FirebaseFirestore.instance
+        .collection('temporarySelections')
+        .doc(widget.documentId) // Use the documentId passed to the widget
         .snapshots()
         .listen((snapshot) {
       if (snapshot.exists) {
         var data = snapshot.data();
         if (data != null && mounted) {
           setState(() {
-            selectedCustomer =
-            data['customerName']; // Seçili müşteri bilgilerini güncelle
-            scannedProducts = List<Map<String, dynamic>>.from(
-                data['products'] ?? []); // Ürünleri güncelle
-            updateTotalAndVat(); // Toplam ve KDV hesaplamalarını güncelle
+            selectedCustomer = data['customerName'];  // Seçili müşteri bilgilerini güncelle
+            scannedProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);  // Ürünleri güncelle
+            updateTotalAndVat();  // Toplam ve KDV hesaplamalarını güncelle
           });
         }
       }
     });
   }
+
 
   Future<void> _loadInitialData() async {
     // Seçili müşteri ve ürünleri yükle
@@ -297,11 +301,57 @@ class _ScanScreenState extends State<ScanScreen> {
       });
     }
   }
+  Future<void> addProductToCurrentCustomer(Map<String, dynamic> productData) async {
+    if (widget.documentId != null) {
+      DocumentReference<Map<String, dynamic>> currentDocRef = FirebaseFirestore.instance
+          .collection('temporarySelections')
+          .doc(widget.documentId);
+
+      DocumentSnapshot<Map<String, dynamic>> snapshot = await currentDocRef.get();
+
+      if (snapshot.exists) {
+        List<dynamic> existingProducts = snapshot.data()?['products'] ?? [];
+
+        double price = double.tryParse(productData['Fiyat']?.toString() ?? '0.0') ?? 0.0;
+        double priceInTl = price;
+        String currency = productData['Doviz']?.toString() ?? '';
+        if (currency == 'Euro') {
+          priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+        } else if (currency == 'Dolar') {
+          priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+        }
+
+        // İskonto uygulanması
+        double discountedPrice = priceInTl;
+        if (selectedCustomer != null) {
+          var customerDiscount = await firestoreService.getCustomerDiscount(selectedCustomer!);
+          double discountRate = customerDiscount['iskonto'] ?? 0.0;
+          discountedPrice = priceInTl * (1 - (discountRate / 100));
+        }
+
+        existingProducts.add({
+          'Kodu': productData['Kodu'],
+          'Detay': productData['Detay'],
+          'Adet': '1',
+          'Adet Fiyatı': discountedPrice.toStringAsFixed(2),
+          'Toplam Fiyat': discountedPrice.toStringAsFixed(2),
+          'İskonto': productData['İskonto'] ?? '0%',
+        });
+
+        await currentDocRef.update({'products': existingProducts});
+      }
+    }
+  }
+
 
 
   Future<void> fetchProductDetails(String barcode) async {
+    print("Barkod tarandı: $barcode");
+
     var products = await firestoreService.fetchProductsByBarcode(barcode);
     if (products.isNotEmpty) {
+      print("Ürünler bulundu: ${products.length} adet");
+
       var uniqueProducts = <Map<String, dynamic>>[];
       for (var product in products) {
         if (!uniqueProducts.any((p) => p['Kodu'] == product['Kodu'])) {
@@ -312,10 +362,14 @@ class _ScanScreenState extends State<ScanScreen> {
       if (uniqueProducts.length > 1) {
         showProductSelectionDialog(uniqueProducts);
       } else {
-        await addProductToTable(uniqueProducts.first);
+        await addProductToCurrentCustomer(uniqueProducts.first);
       }
+    } else {
+      print("Hata: Ürün verisi bulunamadı.");
     }
   }
+
+
 
   Future<void> applyDiscountToProduct(Map<String, dynamic> productData,
       String brand) async {
@@ -458,10 +512,9 @@ class _ScanScreenState extends State<ScanScreen> {
       scannedProducts[index]['Adet'] = quantity;
       scannedProducts[index]['Toplam Fiyat'] =
           (adet * price).toStringAsFixed(2);
-      updateTotalAndVat();
     });
 
-    // Geçici verileri kaydet
+    // Değişikliklerin geçici olarak saklanması
     _customerSelectionService.saveProductList(scannedProducts);
   }
 
@@ -641,9 +694,12 @@ class _ScanScreenState extends State<ScanScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            CustomerDetailsScreen(customerName: selectedCustomer!),
+        builder: (context) => ScanScreen(
+          onCustomerProcessed: (data) {},
+          documentId: 'your_document_id_here', // Pass the correct document ID here
+        ),
       ),
+
     );
   }
 
@@ -934,6 +990,8 @@ class _ScanScreenState extends State<ScanScreen> {
     setState(() {
       isEditing = false;
       editingIndex = -1;
+      // Güncellemeyi kaydet ve sayfayı yenile
+      updateTotalAndVat();
     });
   }
 
@@ -956,41 +1014,26 @@ class _ScanScreenState extends State<ScanScreen> {
 
 
   Future<void> _selectCustomer(String customerName) async {
-    // Mevcut tüm currentX field'larını kontrol et
-    var temporarySelections = FirebaseFirestore.instance.collection('temporarySelections');
-    var querySnapshot = await temporarySelections.get();
-
-    // Mevcut currentX field'larını kontrol et
-    List<String> existingCurrentFields = querySnapshot.docs.map((doc) => doc.id).toList();
-
-    // current field'larını sıralayıp yeni currentX field'ı oluştur
-    int maxCurrentNumber = 1; // En az current2 olacak şekilde başlatıyoruz
-
-    for (var field in existingCurrentFields) {
-      if (field.startsWith('current')) {
-        String numberStr = field.replaceAll('current', '');
-        int? number = int.tryParse(numberStr);
-        if (number != null && number >= maxCurrentNumber) {
-          maxCurrentNumber = number + 1;
-        }
-      }
+    // Mevcut current belgesini güncelleyin
+    if (widget.documentId != null) {
+      await FirebaseFirestore.instance
+          .collection('temporarySelections')
+          .doc(widget.documentId)
+          .update({
+        'customerName': customerName,
+        'products': scannedProducts, // Ürünleri de ekleyin
+      });
+    } else {
+      print("Hata: Mevcut bir documentId yok.");
     }
-
-    String newCurrentField = 'current$maxCurrentNumber';
-
-    // Yeni müşteri için yeni currentX alanını oluşturalım
-    await temporarySelections.doc(newCurrentField).set({
-      'customerName': customerName,
-      'products': scannedProducts, // Ürünleri de ekleyelim
-    });
 
     setState(() {
       selectedCustomer = customerName;
     });
 
-    print("Yeni Müşteri Seçildi: $customerName");
-    print("Oluşturulan current field: $newCurrentField");
+    print("Mevcut müşteri seçildi: $customerName");
   }
+
 
 
 
@@ -1125,15 +1168,24 @@ class _ScanScreenState extends State<ScanScreen> {
     });
 
     // Firestore'daki temporarySelections koleksiyonunu da temizle
+
     FirebaseFirestore.instance
         .collection('temporarySelections')
-        .doc('current')
-        .set({
-      'customerName': '',
-      'products': [],
+        .doc(widget.documentId) // Use the passed document ID
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        var data = snapshot.data();
+        if (data != null && mounted) {
+          setState(() {
+            selectedCustomer = data['customerName'];
+            scannedProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);
+            updateTotalAndVat();
+          });
+        }
+      }
     });
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -1169,23 +1221,21 @@ class _ScanScreenState extends State<ScanScreen> {
                         // Seçilen müşteriyi kaydet
                         await _selectCustomer(newValue);
 
-                        // Firestore'da temporarySelections koleksiyonunda current dokümanını güncelle
-                        FirebaseFirestore.instance.collection(
-                            'temporarySelections').doc('current').set({
+                        // Firestore'da mevcut current dokümanını güncelle
+                        await FirebaseFirestore.instance.collection('temporarySelections').doc(widget.documentId).update({
                           'customerName': newValue,
                           'products': scannedProducts,
-                          // Ürünleri de güncelleyebilirsiniz
                         });
                       }
                     },
-                    items: filteredCustomers.map<DropdownMenuItem<String>>((
-                        String value) {
+                    items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
                       return DropdownMenuItem<String>(
                         value: value,
                         child: Text(value),
                       );
                     }).toList(),
                   ),
+
 
 
                 ],
@@ -1224,154 +1274,155 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          Expanded(
-            child: StreamBuilder<DocumentSnapshot>(
-              stream: FirebaseFirestore.instance.collection(
-                  'temporarySelections').doc('current').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
-                }
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('temporarySelections').doc(widget.documentId).snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(child: CircularProgressIndicator());
+              }
 
-                if (!snapshot.hasData || !snapshot.data!.exists) {
-                  return Center(child: Text('No data found.'));
-                }
+              if (!snapshot.hasData || !snapshot.data!.exists) {
+                return Center(child: Text('No data found.'));
+              }
 
-                var customerData = snapshot.data!.data() as Map<String,
-                    dynamic>?;
-                if (customerData != null) {
-                  selectedCustomer = customerData['customerName'];
-                  scannedProducts = List<Map<String, dynamic>>.from(
-                      customerData['products'] ?? []);
-                  // Sadece burada güncellemeleri yapacağız
-                }
+              var customerData = snapshot.data!.data() as Map<String, dynamic>?;
+              if (customerData != null) {
+                selectedCustomer = customerData['customerName'];
+                scannedProducts = List<Map<String, dynamic>>.from(customerData['products'] ?? []);
+              } else {
+                return Center(child: Text('No customer data found.'));
+              }
 
-                return SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columns: [
-                        DataColumn(label: Text('Kodu')),
-                        DataColumn(label: Text('Detay')),
-                        DataColumn(label: Text('Adet')),
-                        DataColumn(label: Text('Adet Fiyatı')),
-                        DataColumn(label: Text('İskonto')),
-                        DataColumn(label: Text('Toplam Fiyat')),
-                        DataColumn(label: Text('Düzenle')),
-                      ],
-                      rows: scannedProducts.map((product) {
-                        int index = scannedProducts.indexOf(product);
-                        bool isTotalRow = product['Adet Fiyatı']?.toString() ==
-                            'Toplam Tutar' ||
-                            product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-                            product['Adet Fiyatı']?.toString() ==
-                                'Genel Toplam';
+              return SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: Column(
+                  children: [
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        columns: [
+                          DataColumn(label: Text('Kodu')),
+                          DataColumn(label: Text('Detay')),
+                          DataColumn(label: Text('Adet')),
+                          DataColumn(label: Text('Adet Fiyatı')),
+                          DataColumn(label: Text('İskonto')),
+                          DataColumn(label: Text('Toplam Fiyat')),
+                          DataColumn(label: Text('Düzenle')),
+                        ],
+                        rows: [
+                          ...scannedProducts.map((product) {
+                            int index = scannedProducts.indexOf(product);
+                            bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
+                                product['Adet Fiyatı']?.toString() == 'KDV %20' ||
+                                product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
-                        return DataRow(cells: [
-                          DataCell(Text(product['Kodu']?.toString() ?? '')),
-                          DataCell(Text(product['Detay']?.toString() ?? '')),
-                          DataCell(
-                            isTotalRow
-                                ? Text('')
-                                : TextField(
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                border: OutlineInputBorder(),
-                              ),
-                              onChanged: (value) {
-                                updateQuantity(index, value);
-                              },
-                              controller: TextEditingController(
-                                  text: product['Adet']?.toString() ?? ''
-                              ),
-                              onSubmitted: (value) {
-                                handleEditSubmit(index);
-                              },
-                            ),
-                          ),
-                          DataCell(
-                              Text(product['Adet Fiyatı']?.toString() ?? '')),
-                          DataCell(Text(product['İskonto']?.toString() ?? '')),
-                          DataCell(
-                              Text(product['Toplam Fiyat']?.toString() ?? '')),
-                          DataCell(
-                            isTotalRow
-                                ? Container()
-                                : Row(
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.edit, color: Colors.grey),
-                                  onPressed: () {
-                                    setState(() {
-                                      isEditing = true;
-                                      editingIndex = index;
-                                      originalProductData =
-                                      Map<String, dynamic>.from(product);
-                                      quantityController.text =
-                                          product['Adet']?.toString() ?? '';
-                                    });
+                            return DataRow(cells: [
+                              DataCell(Text(product['Kodu']?.toString() ?? '')),
+                              DataCell(Text(product['Detay']?.toString() ?? '')),
+                              DataCell(
+                                isTotalRow
+                                    ? Text('')
+                                    : TextField(
+                                  keyboardType: TextInputType.number,
+                                  decoration: InputDecoration(
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (value) {
+                                    updateQuantity(index, value);
+                                  },
+                                  controller: TextEditingController(
+                                      text: product['Adet']?.toString() ?? ''),
+                                  onSubmitted: (value) {
+                                    handleEditSubmit(index);
                                   },
                                 ),
-                                if (isEditing && editingIndex == index)
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: Icon(
-                                            Icons.check, color: Colors.green),
-                                        onPressed: () {
-                                          handleEditSubmit(index);
-                                        },
+                              ),
+                              DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                              DataCell(Text(product['İskonto']?.toString() ?? '')),
+                              DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                              DataCell(
+                                isTotalRow
+                                    ? Container()
+                                    : Row(
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(Icons.edit, color: Colors.grey),
+                                      onPressed: () {
+                                        setState(() {
+                                          isEditing = true;
+                                          editingIndex = index;
+                                          originalProductData = Map<String, dynamic>.from(product);
+                                          quantityController.text = product['Adet']?.toString() ?? '';
+                                        });
+                                      },
+                                    ),
+                                    if (isEditing && editingIndex == index)
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: Icon(Icons.check, color: Colors.green),
+                                            onPressed: () {
+                                              handleEditSubmit(index);
+                                            },
+                                          ),
+                                          IconButton(
+                                            icon: Icon(Icons.delete, color: Colors.red),
+                                            onPressed: () => removeProduct(index),
+                                          ),
+                                          IconButton(
+                                            icon: Icon(Icons.close, color: Colors.red),
+                                            onPressed: () {
+                                              handleEditCancel(index);
+                                            },
+                                          ),
+                                        ],
                                       ),
-                                      IconButton(
-                                        icon: Icon(
-                                            Icons.delete, color: Colors.red),
-                                        onPressed: () => removeProduct(index),
-                                      ),
-                                      IconButton(
-                                        icon: Icon(
-                                            Icons.close, color: Colors.red),
-                                        onPressed: () {
-                                          handleEditCancel(index);
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ]);
-                      }).toList(),
+                                  ],
+                                ),
+                              ),
+                            ]);
+                          }).toList(),
+                          // Toplam bilgilerini tabloya ekleyin
+                          DataRow(cells: [
+                            DataCell(Text('')),
+                            DataCell(Text('Toplam Tutar')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text(toplamTutar.toStringAsFixed(2))),
+                            DataCell(Text('')),
+                          ]),
+                          DataRow(cells: [
+                            DataCell(Text('')),
+                            DataCell(Text('KDV %20')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text(kdv.toStringAsFixed(2))),
+                            DataCell(Text('')),
+                          ]),
+                          DataRow(cells: [
+                            DataCell(Text('')),
+                            DataCell(Text('Genel Toplam')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text('')),
+                            DataCell(Text(genelToplam.toStringAsFixed(2))),
+                            DataCell(Text('')),
+                          ]),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
+                  ],
+                ),
+              );
+
+            },
           ),
 
 
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Toplam Tutar: ${toplamTutar.toStringAsFixed(2)} TL',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8.0),
-                Text(
-                  'KDV: ${kdv.toStringAsFixed(2)} TL',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8.0),
-                Text(
-                  'Genel Toplam: ${genelToplam.toStringAsFixed(2)} TL',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
+
+
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 5.0),
             child: Row(

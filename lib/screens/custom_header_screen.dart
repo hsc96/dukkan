@@ -158,10 +158,13 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
 
   void addNewCustomer(String customerName, String totalAmount) {
     setState(() {
+      // Mavi kutucuk oluşturulurken
       temporarySelections.add({
         'customerName': customerName,
         'totalAmount': totalAmount,
+        'current': 'currentX' // Bu X, ilgili current numarasıdır.
       });
+
     });
   }
 
@@ -192,10 +195,11 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 List<Map<String, String>> temporarySelections = [];
 
                 for (var doc in snapshot.data!.docs) {
-                  String customerName = doc.data()['customerName'] ?? 'Müşteri Seçilmedi';
+                  String documentId = doc.id; // current ID'sini alın
+                  String customerName = doc.data()?['customerName'] ?? 'Müşteri Seçilmedi';
                   String totalAmount = '0.00 TL';
 
-                  var products = doc.data()['products'] as List<dynamic>?;
+                  var products = doc.data()?['products'] as List<dynamic>?;
                   if (products != null) {
                     var genelToplamEntry = products.firstWhere(
                           (product) => product['Adet Fiyatı'] == 'Genel Toplam',
@@ -206,12 +210,14 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     }
                   }
 
-                  // temporarySelections için güncelleme yapalım
+                  // Mavi kutucuk verilerini doldurun
                   temporarySelections.add({
                     'customerName': customerName,
                     'totalAmount': totalAmount,
+                    'currentId': documentId, // current ID'sini burada saklayın
                   });
                 }
+
 
                 return Positioned(
                   top: 21.0,
@@ -222,49 +228,38 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: temporarySelections.map((customer) {
+    // Mavi kutucuklar için GestureDetector
                         return GestureDetector(
                           onTap: () async {
-                            // Veriyi çekmek için currentX alanına göre belirlenecek
-                            String collectionPath = 'temporarySelections';
-                            String? documentId = customer['field']; // Müşteriye göre currentX field'ı
+                            print("Mavi kutuya tıklandı!");
+
+                            // `currentId` değerini mavi kutucukta kullanıyoruz
+                            String? documentId = customer['currentId']; // Müşteriye göre currentX field'ı
 
                             if (documentId != null) {
+                              print("Document ID: $documentId");
+
                               DocumentSnapshot<Map<String, dynamic>> currentData = await FirebaseFirestore.instance
-                                  .collection(collectionPath)
+                                  .collection('temporarySelections')
                                   .doc(documentId)
                                   .get();
 
                               if (currentData.exists) {
-                                String customerName = currentData.data()?['customerName'] ?? 'Müşteri Seçilmedi';
-                                String totalAmount = '0.00 TL';
-
-                                var products = currentData.data()?['products'] as List<dynamic>?;
-                                if (products != null) {
-                                  var genelToplamEntry = products.firstWhere(
-                                        (product) => product['Adet Fiyatı'] == 'Genel Toplam',
-                                    orElse: () => null,
-                                  );
-                                  if (genelToplamEntry != null) {
-                                    totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
-                                  }
-                                }
-
-                                // Seçilen müşteri bilgilerini güncelle
-                                setState(() {
-                                  selectedCustomers.clear();
-                                  selectedCustomers.add({
-                                    'customerName': customerName,
-                                    'totalAmount': totalAmount,
-                                  });
-                                });
+                                print("Document data mevcut!");
 
                                 // ScanScreen sayfasına git
+                                print("ScanScreen'e yönlendirme yapılacak, Document ID: $documentId");
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) => ScanScreen(onCustomerProcessed: (data) {}),
+                                    builder: (context) => ScanScreen(
+                                      onCustomerProcessed: (data) {},
+                                      documentId: documentId,
+                                    ),
                                   ),
                                 );
+                              } else {
+                                print("Veri mevcut değil, currentX bulunamadı.");
                               }
                             } else {
                               print("Müşteri field bilgisi bulunamadı.");
@@ -307,6 +302,11 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                           ),
                         );
 
+
+
+
+
+
                       }).toList(),
                     ),
                   ),
@@ -346,9 +346,17 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     'products': [],
                   });
 
+
+
+                  // Yeni oluşturulan currentX field'ını ScanScreen'e geçiyoruz
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => ScanScreen(onCustomerProcessed: (data) {})),
+                    MaterialPageRoute(
+                      builder: (context) => ScanScreen(
+                        onCustomerProcessed: (data) {},
+                        documentId: newCurrentField, // newCurrentField is passed here
+                      ),
+                    ),
                   );
                 },
                 child: Container(
@@ -385,6 +393,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 ),
               ),
             ),
+
 
             Positioned(
               top: 320.0,

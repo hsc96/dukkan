@@ -56,7 +56,10 @@ class MyApp extends StatelessWidget {
         routes: {
           '/login': (context) => LoginScreen(),
           '/home': (context) => CustomHeaderScreen(),
-          '/scan': (context) => ScanScreen(onCustomerProcessed: onCustomerSelected),
+          '/scan': (context) => ScanScreen(
+            onCustomerProcessed: onCustomerSelected,
+            documentId: 'current1', // Pass the appropriate document ID here
+          ),
 
           '/awaited_products': (context) => AwaitedProductsScreen(),
           '/faturala': (context) => FaturalaScreen(),
