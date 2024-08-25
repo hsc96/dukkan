@@ -5,7 +5,8 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<void> addUser(String uid, String email, String role, String fullName) async {
+  Future<void> addUser(String uid, String email, String role,
+      String fullName) async {
     await _db.collection('users').doc(uid).set({
       'email': email,
       'role': role,
@@ -14,7 +15,8 @@ class FirestoreService {
   }
 
 
-  Future<void> createUserWithEmail(String email, String password, String role, String fullName) async {
+  Future<void> createUserWithEmail(String email, String password, String role,
+      String fullName) async {
     UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -26,7 +28,28 @@ class FirestoreService {
     }
   }
 
-  Future<void> createUserWithPhone(String phone, String role, String fullName) async {
+  Future<Map<String, dynamic>> fetchProductDetails(String productCode) async {
+    try {
+      QuerySnapshot querySnapshot = await _db
+          .collection('urunler')
+          .where('Kodu', isEqualTo: productCode)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        return querySnapshot.docs.first.data() as Map<String, dynamic>;
+      } else {
+        return {}; // Ürün bulunamazsa boş bir map döner
+      }
+    } catch (e) {
+      print('Error fetching product details: $e');
+      return {}; // Hata durumunda boş bir map döner
+    }
+  }
+
+
+  Future<void> createUserWithPhone(String phone, String role,
+      String fullName) async {
     // Telefon numarası ile kullanıcı oluşturma işlemleri
     // Bu kısımda Firebase Authentication'ın telefon numarası ile doğrulama yöntemlerini kullanmanız gerekecek
   }
@@ -47,7 +70,8 @@ class FirestoreService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchProductsByBarcode(String barcode) async {
+  Future<List<Map<String, dynamic>>> fetchProductsByBarcode(
+      String barcode) async {
     QuerySnapshot querySnapshot = await _db.collection('urunler')
         .where('Barkod', isEqualTo: barcode)
         .get();
@@ -68,17 +92,20 @@ class FirestoreService {
     }).cast<String>().toList();
   }
 
-  Future<void> updateProductPricesByBrands(List<String> brands, double zamOrani) async {
+  Future<void> updateProductPricesByBrands(List<String> brands,
+      double zamOrani) async {
     QuerySnapshot querySnapshot = await _db.collection('urunler')
         .where('Marka', whereIn: brands)
         .get();
 
     for (var doc in querySnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
-      double currentPrice = double.tryParse(data['Fiyat']?.toString() ?? '0') ?? 0.0;
+      double currentPrice = double.tryParse(data['Fiyat']?.toString() ?? '0') ??
+          0.0;
       double newPrice = currentPrice + (currentPrice * zamOrani / 100);
 
-      await _db.collection('urunler').doc(doc.id).update({'Fiyat': newPrice.toStringAsFixed(2)});
+      await _db.collection('urunler').doc(doc.id).update(
+          {'Fiyat': newPrice.toStringAsFixed(2)});
     }
   }
 
@@ -94,7 +121,8 @@ class FirestoreService {
     return brands.toList();
   }
 
-  Future<void> addZamToCollection(String marka, String tarih, String yetkili, double zamOrani) async {
+  Future<void> addZamToCollection(String marka, String tarih, String yetkili,
+      double zamOrani) async {
     await _db.collection('zam').add({
       'marka': marka,
       'tarih': tarih,
@@ -128,7 +156,8 @@ class FirestoreService {
     }
   }
 
-  Future<Map<String, dynamic>> getDiscountRates(String discountLevel, String marka) async {
+  Future<Map<String, dynamic>> getDiscountRates(String discountLevel,
+      String marka) async {
     if (discountLevel == null || marka == null) {
       throw Exception('Geçersiz iskonto seviyesi veya marka');
     }

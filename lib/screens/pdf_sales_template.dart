@@ -117,13 +117,23 @@ class PDFSalesTemplate {
 
     try {
       final output = await getTemporaryDirectory();
-      final file = File("${output.path}/$customerName/hesaplanacak_urunler_$formattedDate.pdf");
+      final directoryPath = "${output.path}/$customerName";
+
+      // Klasörün var olup olmadığını kontrol edin, eğer yoksa oluşturun
+      final directory = Directory(directoryPath);
+      if (!(await directory.exists())) {
+        await directory.create(recursive: true);
+      }
+
+      final file = File("$directoryPath/hesaplanacak_urunler_$formattedDate.pdf");
       await file.writeAsBytes(await pdf.save());
       await OpenFile.open(file.path);
     } catch (e) {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
+
+
 
   static pw.Widget _buildProductInfo(Map<String, dynamic> product, pw.Font ttf) {
     List<pw.Widget> infoWidgets = [];
