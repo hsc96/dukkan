@@ -35,6 +35,27 @@ class _CustomersScreenState extends State<CustomersScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Firebase Stream Listener for real-time updates
+    getCustomersStream().listen((querySnapshot) {
+      var updatedCustomers = querySnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
+          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
+        };
+      }).toList();
+
+      setState(() {
+        filteredCustomers = updatedCustomers;
+
+        // Update the total invoice amount
+        totalInvoiceAmount = updatedCustomers.fold(0.0, (sum, customer) {
+          return sum + (customer['Fatura Kesilecek Tutar'] ?? 0.0);
+        });
+      });
+    });
+
     fetchInitialCustomers();
     fetchDiscountLevels();
 
@@ -63,6 +84,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       }
     });
   }
+
 
 
   Future<void> fetchInitialCustomers() async {
@@ -571,9 +593,23 @@ class _CustomersScreenState extends State<CustomersScreen> {
       ),
     );
   }
+  Stream<QuerySnapshot> getCustomersStream() {
+    return FirebaseFirestore.instance
+        .collection('veritabanideneme')
+        .where('Fatura Kesilecek Tutar', isGreaterThan: 0)
+        .snapshots();
+  }
 
-  @override
-  @override
+  Future<void> updateCustomerInvoiceAmount(String customerId, double newAmount) async {
+    await FirebaseFirestore.instance
+        .collection('veritabanideneme')
+        .doc(customerId)
+        .update({
+      'Fatura Kesilecek Tutar': newAmount,
+    });
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(

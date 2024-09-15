@@ -46,6 +46,7 @@ class _ScanScreenState extends State<ScanScreen> {
   double subtotal = 0.0;
   double vat = 0.0;
   double grandTotal = 0.0;
+  String currentUserName = ''; // Mevcut kullanıcının ismi burada tutulacak
   String currentDate = DateFormat('d MMMM y', 'tr_TR').format(
       DateTime.now()); // Tarih formatı ayarlandı.
   final CustomerSelectionService _customerSelectionService = CustomerSelectionService();
@@ -70,6 +71,8 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   void initState() {
     super.initState();
+    getCurrentUserName();
+
     _scrollController = ScrollController();
     fetchCustomers();           // Mevcut müşterileri çek
     initializeDovizKur();       // Döviz kurlarını başlat
@@ -105,6 +108,21 @@ class _ScanScreenState extends State<ScanScreen> {
 
   Future<void> fetchCurrentUser() async {
     currentUser = _auth.currentUser;
+  }
+
+  Future<void> getCurrentUserName() async {
+    User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null) {
+      DocumentSnapshot<Map<String, dynamic>> userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      if (userDoc.exists) {
+        setState(() {
+          currentUserName = userDoc.data()?['fullName'] ?? 'Unknown User';
+        });
+      }
+    }
   }
 
 
@@ -197,8 +215,10 @@ class _ScanScreenState extends State<ScanScreen> {
     String? fullName;
 
     if (currentUser != null) {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(
-          currentUser.uid).get();
+      var userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
       } else {
@@ -213,14 +233,41 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     }
 
-    var customerCollection = FirebaseFirestore.instance.collection(
-        'customerDetails');
-    var querySnapshot = await customerCollection.where(
-        'customerName', isEqualTo: selectedCustomer).get();
+    // temporarySelections belgesinden verileri çekelim
+    DocumentSnapshot<Map<String, dynamic>> tempSelectionSnapshot =
+    await FirebaseFirestore.instance
+        .collection('temporarySelections')
+        .doc(widget.documentId)
+        .get();
 
-    var processedProducts = scannedProducts.map((product) {
-      double unitPrice = double.tryParse(
-          product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+    if (!tempSelectionSnapshot.exists) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Geçici seçimler bulunamadı')),
+          );
+        }
+      });
+      return;
+    }
+
+    Map<String, dynamic>? data = tempSelectionSnapshot.data();
+    List<dynamic> products = data?['products'] ?? [];
+
+    // Toplam satırlarını filtreleyelim
+    List<Map<String, dynamic>> actualProducts = products.where((product) {
+      return product['Kodu'] != null && product['Kodu'].toString().isNotEmpty;
+    }).cast<Map<String, dynamic>>().toList();
+
+    // Satışa katkıda bulunan satış elemanlarını toplayalım
+    Set<String> salespersons = actualProducts.map<String>((product) {
+      return product['addedBy'] ?? 'Unknown Salesperson';
+    }).toSet();
+
+    // processedProducts listesini oluşturalım
+    var processedProducts = actualProducts.map((product) {
+      double unitPrice =
+          double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
       double totalPrice = unitPrice * quantity;
 
@@ -231,43 +278,93 @@ class _ScanScreenState extends State<ScanScreen> {
         'Adet Fiyatı': unitPrice.toStringAsFixed(2),
         'Toplam Fiyat': totalPrice.toStringAsFixed(2),
         'İskonto': product['İskonto'],
+        'addedBy': product['addedBy'] ?? 'Unknown User',
         'whoTook': 'Müşteri',
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
         'orderMethod': 'Telefon',
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(
-            DateTime.now()),
+        'siparisTarihi':
+        DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
+    // Toplam tutarı hesaplayalım
+    double toplamTutar = processedProducts.fold(0.0, (sum, product) {
+      return sum + (double.tryParse(product['Toplam Fiyat'] ?? '0') ?? 0.0);
+    });
+
     try {
+      var customerCollection =
+      FirebaseFirestore.instance.collection('customerDetails');
+      var querySnapshot = await customerCollection
+          .where('customerName', isEqualTo: selectedCustomer)
+          .get();
+
+      int saleNumber = 1; // Varsayılan olarak 1
+
       if (querySnapshot.docs.isNotEmpty) {
         var docRef = querySnapshot.docs.first.reference;
-        var existingProducts = List<Map<String, dynamic>>.from(
-            querySnapshot.docs.first['products'] ?? []);
+        var customerData = querySnapshot.docs.first.data();
+        var existingProducts =
+        List<Map<String, dynamic>>.from(customerData['products'] ?? []);
+
+        // Mevcut saleCount değerini al ve artır
+        saleNumber = (customerData['saleCount'] ?? 0) + 1;
+
+        // processedProducts içindeki her ürüne saleNumber ekleyelim
+        processedProducts = processedProducts.map((product) {
+          return {
+            ...product,
+            'saleNumber': saleNumber,
+          };
+        }).toList();
+
         existingProducts.addAll(processedProducts);
-        await docRef.update({'products': existingProducts});
+
+        await docRef.update({
+          'products': existingProducts,
+          'saleCount': saleNumber, // saleCount değerini güncelle
+        });
       } else {
+        // İlk kez satış yapılıyorsa
+        // processedProducts içindeki her ürüne saleNumber ekleyelim
+        processedProducts = processedProducts.map((product) {
+          return {
+            ...product,
+            'saleNumber': saleNumber,
+          };
+        }).toList();
+
         await customerCollection.add({
           'customerName': selectedCustomer,
           'products': processedProducts,
+          'saleCount': saleNumber,
         });
       }
 
+      // Satış verisini kaydedelim
       await FirebaseFirestore.instance.collection('sales').add({
-        'userId': currentUser!.uid,
+        'salespersons': salespersons.toList(),
         'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
         'customerName': selectedCustomer,
         'amount': toplamTutar,
         'products': processedProducts,
+        'saleNumber': saleNumber, // Satış numarasını ekleyelim
       });
 
-      // Clear selections and reset UI only if the widget is still mounted
+      // temporarySelections belgesini silelim
+      await FirebaseFirestore.instance
+          .collection('temporarySelections')
+          .doc(widget.documentId)
+          .delete();
+
+      // UI'ı sıfırlayalım
       if (mounted) {
-        await _customerSelectionService.clearTemporaryData();
         setState(() {
-          clearScreen(); // This clears the data from the UI
+          selectedCustomer = null;
+          scannedProducts.clear();
+          // Diğer gerekli sıfırlamaları yapın
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -291,6 +388,11 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     }
   }
+
+
+
+
+
 
 
   Future<void> fetchDovizKur() async {
@@ -322,79 +424,93 @@ class _ScanScreenState extends State<ScanScreen> {
       });
     }
   }
-  Future<void> addProductToCurrentCustomer(Map<String, dynamic> productData) async {
-    if (widget.documentId != null) {
-      DocumentReference<Map<String, dynamic>> currentDocRef = FirebaseFirestore.instance
-          .collection('temporarySelections')
-          .doc(widget.documentId);
+  Future<void> addProductToCurrentCustomer(Map<String, dynamic> productData, String? currentUserFullName) async {
+    try {
+      if (widget.documentId != null) {
+        DocumentReference<Map<String, dynamic>> currentDocRef = FirebaseFirestore.instance
+            .collection('temporarySelections')
+            .doc(widget.documentId);
 
-      DocumentSnapshot<Map<String, dynamic>> snapshot = await currentDocRef.get();
+        DocumentSnapshot<Map<String, dynamic>> snapshot = await currentDocRef.get();
 
-      if (snapshot.exists) {
-        List<dynamic> existingProducts = snapshot.data()?['products'] ?? [];
+        if (snapshot.exists) {
+          List<dynamic> existingProducts = snapshot.data()?['products'] ?? [];
 
-        // Ürün fiyatını 'urunler' koleksiyonundan çek
-        Map<String, dynamic> productDetails = await firestoreService.fetchProductDetails(productData['Kodu']);
-        double price = double.tryParse(productDetails['Fiyat']?.toString() ?? '') ?? 0.0;
+          // Ürün fiyatını 'urunler' koleksiyonundan çek
+          Map<String, dynamic> productDetails = await firestoreService.fetchProductDetails(productData['Kodu']);
+          double price = double.tryParse(productDetails['Fiyat']?.toString() ?? '') ?? 0.0;
 
-
-        // Eğer fiyat 0.0 ise uyarı ver ve işleme almayı durdur
-        if (price == 0.0) {
-          print("Warning: Price is 0.0 for product code ${productData['Kodu']}");
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Ürün fiyatı eksik veya hatalı! Ürün kodu: ${productData['Kodu']}')),
-          );
-          return; // Fiyat 0.0 ise işleme devam etmiyoruz
-        }
-
-        // Döviz çevirisini yap
-        double priceInTl = price;
-        String currency = productDetails['Doviz']?.toString() ?? '';
-
-        if (currency == 'Euro') {
-          priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
-        } else if (currency == 'Dolar') {
-          priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
-        } else {
-          priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
-        }
-
-        // İskonto uygulanması
-        double discountedPrice = priceInTl;
-        double discountRate = 0.0;
-
-        if (selectedCustomer != null) {
-          var customerDiscount = await firestoreService.getCustomerDiscount(selectedCustomer!);
-
-          // İskonto seviyesi alma
-          String discountLevel = customerDiscount['iskonto'] ?? '';
-          print("İskonto seviyesi: $discountLevel");
-
-          if (discountLevel.isNotEmpty) {
-            // İlgili marka için iskonto oranını al
-            var discountData = await firestoreService.getDiscountRates(discountLevel, productDetails['Marka']?.toString() ?? '');
-            discountRate = double.tryParse(discountData['rate']?.toString() ?? '0.0') ?? 0.0;
-            discountedPrice = priceInTl * (1 - (discountRate / 100));
+          // Eğer fiyat 0.0 ise uyarı ver ve işleme almayı durdur
+          if (price == 0.0) {
+            print("Warning: Price is 0.0 for product code ${productData['Kodu']}");
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Ürün fiyatı eksik veya hatalı! Ürün kodu: ${productData['Kodu']}')),
+            );
+            return; // Fiyat 0.0 ise işleme devam etmiyoruz
           }
+
+          // Döviz çevirisini yap
+          double priceInTl = price;
+          String currency = productDetails['Doviz']?.toString() ?? '';
+
+          if (currency == 'Euro') {
+            priceInTl = price * (double.tryParse(euroKur.replaceAll(',', '.')) ?? 0.0);
+          } else if (currency == 'Dolar') {
+            priceInTl = price * (double.tryParse(dolarKur.replaceAll(',', '.')) ?? 0.0);
+          } else {
+            priceInTl = price; // Eğer döviz bilgisi yoksa, doğrudan fiyatı kullan
+          }
+
+          // İskonto uygulanması
+          double discountedPrice = priceInTl;
+          double discountRate = 0.0;
+
+          if (selectedCustomer != null) {
+            var customerDiscount = await firestoreService.getCustomerDiscount(selectedCustomer!);
+
+            // İskonto seviyesi alma
+            String discountLevel = customerDiscount['iskonto'] ?? '';
+            print("İskonto seviyesi: $discountLevel");
+
+            if (discountLevel.isNotEmpty) {
+              // İlgili marka için iskonto oranını al
+              var discountData = await firestoreService.getDiscountRates(discountLevel, productDetails['Marka']?.toString() ?? '');
+              discountRate = double.tryParse(discountData['rate']?.toString() ?? '0.0') ?? 0.0;
+              discountedPrice = priceInTl * (1 - (discountRate / 100));
+            }
+          }
+
+          // Hata ayıklama için kullanıcı bilgisi ve ürün detayı çıktı alalım
+          print('Seçilen müşteri: $selectedCustomer');
+          print('Uygulanan iskonto oranı: $discountRate');
+          print('Kullanıcı: $currentUserFullName');
+
+          existingProducts.add({
+            'Kodu': productDetails['Kodu'],
+            'Detay': productDetails['Detay'],
+            'Adet': '1',
+            'Adet Fiyatı': discountedPrice.toStringAsFixed(2), // İskonto uygulanmış fiyat
+            'Toplam Fiyat': discountedPrice.toStringAsFixed(2),
+            'İskonto': discountRate > 0 ? '%$discountRate' : '0%', // İskonto bilgisi
+            'addedBy': currentUserFullName ?? 'Unknown User', // Ekleyen kullanıcı bilgisi
+          });
+
+
+          await currentDocRef.update({'products': existingProducts});
+        } else {
+          print('Snapshot exists hatası: snapshot bulunamadı.');
         }
-
-        print('Seçilen müşteri: $selectedCustomer');
-        print('Uygulanan iskonto oranı: $discountRate');
-
-        // Ürün bilgilerini güncelle
-        existingProducts.add({
-          'Kodu': productDetails['Kodu'],
-          'Detay': productDetails['Detay'],
-          'Adet': '1',
-          'Adet Fiyatı': discountedPrice.toStringAsFixed(2), // İskonto uygulanmış fiyat
-          'Toplam Fiyat': discountedPrice.toStringAsFixed(2),
-          'İskonto': discountRate > 0 ? '%$discountRate' : '0%', // İskonto bilgisi
-        });
-
-        await currentDocRef.update({'products': existingProducts});
+      } else {
+        print('Document ID hatası: widget.documentId null.');
       }
+    } catch (e) {
+      print('Hata oluştu: $e'); // Hatayı yakalayıp terminale yazdırıyoruz
     }
   }
+
+
+
+
 
 
 
@@ -487,11 +603,15 @@ class _ScanScreenState extends State<ScanScreen> {
       double discountedPrice = priceInTl * (1 - (discountRate / 100));
       double adet = double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1;
 
-      // Ürün bilgilerini güncelle
-      scannedProducts[i]['Marka'] = brand;
-      scannedProducts[i]['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
-      scannedProducts[i]['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
-      scannedProducts[i]['Toplam Fiyat'] = (adet * discountedPrice).toStringAsFixed(2);
+      // Diğer alanları güncellerken mevcut veriyi koruyun
+      scannedProducts[i] = {
+        ...scannedProducts[i], // Mevcut veriyi korur
+        'Marka': brand,
+        'İskonto': '%${discountRate.toStringAsFixed(2)}',
+        'Adet Fiyatı': discountedPrice.toStringAsFixed(2),
+        'Toplam Fiyat': (adet * discountedPrice).toStringAsFixed(2),
+      };
+
     }
 
     // Güncellenmiş ürünleri Firestore'daki temporarySelections koleksiyonunda güncelle
@@ -524,15 +644,28 @@ class _ScanScreenState extends State<ScanScreen> {
         }
       }
 
+      // Kullanıcı adını al
+      User? currentUser = FirebaseAuth.instance.currentUser;
+      String? currentUserFullName;
+
+      if (currentUser != null) {
+        var userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+        currentUserFullName = userDoc.data()?['fullName'] ?? 'Unknown User';
+      }
+
       if (uniqueProducts.length > 1) {
         showProductSelectionDialog(uniqueProducts);
       } else {
-        await addProductToCurrentCustomer(uniqueProducts.first);
+        await addProductToCurrentCustomer(uniqueProducts.first, currentUserFullName); // 2 argüman gönderiliyor
       }
     } else {
       print("Hata: Ürün verisi bulunamadı.");
     }
   }
+
   Future<void> applyDiscountToProduct(Map<String, dynamic> productData) async {
     double basePrice = double.tryParse(productData['Fiyat']?.toString() ?? '0') ?? 0.0;
     String currency = productData['Doviz']?.toString() ?? '';
@@ -614,7 +747,22 @@ class _ScanScreenState extends State<ScanScreen> {
                 return ListTile(
                   title: Text(products[index]['Detay']),
                   onTap: () async {
-                    await addProductToTable(products[index]); // Seçilen ürünü tabloya ekle
+                    // Kullanıcı adını al
+                    User? currentUser = FirebaseAuth.instance.currentUser;
+                    String? currentUserFullName;
+
+                    if (currentUser != null) {
+                      var userDoc = await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(currentUser.uid)
+                          .get();
+                      currentUserFullName = userDoc.data()?['fullName'] ?? 'Unknown User';
+                    }
+
+                    print("Seçilen Ürün: ${products[index]['Kodu']} Kullanıcı: $currentUserFullName"); // Hata ayıklama için çıktı al
+
+                    // Ürünü tabloya ekle ve kullanıcı bilgisini ekle
+                    await addProductToCurrentCustomer(products[index], currentUserFullName);
                     Navigator.of(context).pop(); // Diyalog ekranını kapat
                   },
                 );
@@ -625,6 +773,9 @@ class _ScanScreenState extends State<ScanScreen> {
       },
     );
   }
+
+
+
 
 
   Future<void> addProductToTable(Map<String, dynamic> productData) async {
@@ -903,7 +1054,9 @@ class _ScanScreenState extends State<ScanScreen> {
     var querySnapshot = await customerCollection.where(
         'customerName', isEqualTo: selectedCustomer).get();
 
-    var processedProducts = scannedProducts.map((product) {
+    var processedProducts = scannedProducts
+        .where((product) => product['Kodu'] != null && product['Kodu'].toString().isNotEmpty)
+        .map((product) {
       double unitPrice = double.tryParse(
           product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
@@ -916,6 +1069,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'Adet Fiyatı': unitPrice.toStringAsFixed(2),
         'Toplam Fiyat': totalPrice.toStringAsFixed(2),
         'İskonto': product['İskonto'],
+        'addedBy': product['addedBy'] ?? 'Unknown User',
         'whoTook': 'Müşteri',
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
@@ -925,6 +1079,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
+
 
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
@@ -1031,8 +1186,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       Column(
                         children: [
                           TextField(
-                            decoration: InputDecoration(
-                                labelText: 'Müşteri İsmi'),
+                            decoration: InputDecoration(labelText: 'Müşteri İsmi'),
                             controller: recipientController,
                           ),
                           TextField(
@@ -1044,8 +1198,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       ),
                     if (whoTook == 'Kendi Firması')
                       TextField(
-                        decoration: InputDecoration(
-                            labelText: 'Teslim Alan Çalışan İsmi'),
+                        decoration: InputDecoration(labelText: 'Teslim Alan Çalışan İsmi'),
                         controller: recipientController,
                       ),
                     SizedBox(height: 20),
@@ -1103,8 +1256,7 @@ class _ScanScreenState extends State<ScanScreen> {
                     if (orderMethod == 'Diğer')
                       TextField(
                         controller: otherMethodController,
-                        decoration: InputDecoration(
-                            labelText: 'Sipariş Şekli (Diğer)'),
+                        decoration: InputDecoration(labelText: 'Sipariş Şekli (Diğer)'),
                       ),
                   ],
                 ),
@@ -1123,21 +1275,25 @@ class _ScanScreenState extends State<ScanScreen> {
                   onPressed: () {
                     if (whoTook != null &&
                         recipientController.text.isNotEmpty &&
-                        contactPersonController.text.isNotEmpty &&
                         orderMethod != null &&
-                        (orderMethod != 'Diğer' ||
-                            otherMethodController.text.isNotEmpty)) {
-                      // Kaydetme işlemini burada yapıyoruz
-                      saveToCustomerDetails(
-                        whoTook!,
-                        recipientController.text,
-                        contactPersonController.text,
-                        orderMethod == 'Diğer'
-                            ? otherMethodController.text
-                            : orderMethod!,
-                      );
-                      isSaved = true; // Kaydedildi
-                      Navigator.of(context).pop(); // Ekranı kapatır
+                        (orderMethod != 'Diğer' || otherMethodController.text.isNotEmpty)) {
+                      if (whoTook == 'Müşterisi' && contactPersonController.text.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Lütfen firmadan bilgilendirilecek kişi ismini girin')),
+                        );
+                      } else {
+                        // Kaydetme işlemini burada yapıyoruz
+                        saveToCustomerDetails(
+                          whoTook!,
+                          recipientController.text,
+                          whoTook == 'Müşterisi' ? contactPersonController.text : '',
+                          orderMethod == 'Diğer'
+                              ? otherMethodController.text
+                              : orderMethod!,
+                        );
+                        isSaved = true; // Kaydedildi
+                        Navigator.of(context).pop(); // Ekranı kapatır
+                      }
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('Lütfen tüm alanları doldurun')),
@@ -1147,6 +1303,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 ),
               ],
             );
+
           },
         );
       },
@@ -1438,106 +1595,60 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
   void clearScreen() {
-    // Belirli bir customerName ile eşleşen documentId'yi bulmak için sorgu
-    FirebaseFirestore.instance
-        .collection('temporarySelections')
-        .where('customerName', isEqualTo: selectedCustomer)
-        .get()
-        .then((querySnapshot) {
-      if (querySnapshot.docs.isNotEmpty) {
-        // Belge mevcutsa, documentId'yi al
-        String targetDocumentId = querySnapshot.docs.first.id;
+    if (widget.documentId != null) {
+      FirebaseFirestore.instance
+          .collection('temporarySelections')
+          .doc(widget.documentId)
+          .delete()
+          .then((_) async {
+        print("Firestore '${widget.documentId}' verisi başarıyla silindi");
 
-        // Belgeyi silme işlemi
-        FirebaseFirestore.instance
-            .collection('temporarySelections')
-            .doc(targetDocumentId)
-            .delete()
-            .then((_) {
-          print("Firestore '$targetDocumentId' verisi başarıyla silindi");
-
-          // Firestore'daki current verisi silindikten sonra diğer verileri güncelle
-          if (widget.documentId != null) {
-            FirebaseFirestore.instance
-                .collection('temporarySelections')
-                .doc(widget.documentId)
-                .update({
-              'customerName': '',
-              'products': [],
-              'subtotal': 0.0,
-              'vat': 0.0,
-              'grandTotal': 0.0,
-            }).then((_) async {
-              print("Firestore temporarySelections güncellendi");
-
-              // UI'ı temizle ve kullanıcıyı CustomHeaderScreen'e yönlendir
-              setState(() {
-                selectedCustomer = null;
-                scannedProducts.clear();
-                originalProducts.clear();
-                toplamTutar = 0.0;
-                kdv = 0.0;
-                genelToplam = 0.0;
-              });
-
-              // Yönlendirme işlemi
-              await showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    title: Text('Teklif Oluşturuldu'),
-                    content: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Teklif başarıyla oluşturuldu.'),
-                        SizedBox(height: 8),
-                        Text('Müşteri detayları veya teklifler sayfasına ulaşabilirsiniz.'),
-                      ],
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop();  // Dialog'u kapat
-                        },
-                        child: Text('Tamam'),
-                      ),
-                    ],
-                  );
-                },
-              );
-
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => CustomHeaderScreen()),
-              );
-            }).catchError((error) {
-              print('Firestore güncellenirken hata oluştu: $error');
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Firestore güncellenirken hata oluştu: $error')),
-              );
-            });
-          } else {
-            print("Hata: documentId null");
-          }
-        }).catchError((error) {
-          print('Belge silinirken hata oluştu: $error');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Belge silinirken hata oluştu: $error')),
-          );
+        // UI'ı temizle
+        setState(() {
+          selectedCustomer = null;
+          scannedProducts.clear();
+          originalProducts.clear();
+          toplamTutar = 0.0;
+          kdv = 0.0;
+          genelToplam = 0.0;
         });
-      } else {
-        print("Hata: Belirtilen customerName ile eşleşen belge bulunamadı.");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Belirtilen müşteri için belge bulunamadı.')),
+
+        // Kullanıcıya bilgi mesajı göster ve yönlendir
+        await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('İşlem Tamamlandı'),
+              content: Text('Veriler başarıyla temizlendi.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();  // Dialog'u kapat
+                  },
+                  child: Text('Tamam'),
+                ),
+              ],
+            );
+          },
         );
-      }
-    }).catchError((error) {
-      print('Sorgu yapılırken hata oluştu: $error');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Sorgu yapılırken hata oluştu: $error')),
-      );
-    });
+
+        // İsteğe bağlı olarak kullanıcıyı yönlendir
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => CustomHeaderScreen()),
+        );
+      }).catchError((error) {
+        print('Belge silinirken hata oluştu: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Belge silinirken hata oluştu: $error')),
+        );
+      });
+    } else {
+      print("Hata: documentId null");
+    }
   }
+
+
 
 
 

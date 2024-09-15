@@ -4,13 +4,20 @@ import 'package:intl/intl.dart';
 import 'package:barcode_scan2/barcode_scan2.dart';
 import 'products_pdf.dart';
 import 'products_excel.dart';
-
+import 'account_tracking_screen.dart';
 
 class ProductsWidget extends StatefulWidget {
   final String customerName;
   final Function(double) onTotalUpdated; // Yeni eklenen parametre
+  final Function(List<int> selectedIndexes, List<Map<String, dynamic>> customerProducts) onProcessSelected;
 
-  ProductsWidget({required this.customerName, required this.onTotalUpdated}); // Yeni parametre eklendi
+
+
+  ProductsWidget({
+    required this.customerName,
+    required this.onTotalUpdated,
+    required this.onProcessSelected, // Yeni parametre
+  });
 
   @override
   _ProductsWidgetState createState() => _ProductsWidgetState();
@@ -18,6 +25,7 @@ class ProductsWidget extends StatefulWidget {
 
 class _ProductsWidgetState extends State<ProductsWidget> {
   List<Map<String, dynamic>> customerProducts = [];
+
   bool isEditing = false;
   int editingIndex = -1;
   Map<String, dynamic>? originalProductData;
@@ -95,6 +103,12 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     setState(() {
       double adet = double.tryParse(quantity) ?? 1;
       double price = double.tryParse(customerProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+
+      // Eski değerleri saklıyoruz
+      customerProducts[index]['Eski Adet'] = customerProducts[index]['Adet'];
+      customerProducts[index]['Değiştiren'] = 'admin';  // Burada kullanıcı adı manuel girildi, dinamik yapılabilir
+      customerProducts[index]['İşlem Tarihi'] = DateTime.now().toIso8601String();
+
       customerProducts[index]['Adet'] = quantity;
       customerProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
     });
@@ -104,9 +118,44 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     setState(() {
       double adet = double.tryParse(customerProducts[index]['Adet']?.toString() ?? '1') ?? 1;
       double priceValue = double.tryParse(price) ?? 0.0;
+
+      // Eski fiyat değerini saklıyoruz
+      customerProducts[index]['Eski Fiyat'] = customerProducts[index]['Adet Fiyatı'];
+      customerProducts[index]['Değiştiren'] = 'admin';  // Burada kullanıcı adı manuel girildi, dinamik yapılabilir
+      customerProducts[index]['İşlem Tarihi'] = DateTime.now().toIso8601String();
+
       customerProducts[index]['Adet Fiyatı'] = price;
       customerProducts[index]['Toplam Fiyat'] = (adet * priceValue).toStringAsFixed(2);
     });
+  }
+
+  void showInfoDialogForProduct(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Değişiklik Bilgisi'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Eski Adet: ${product['Eski Adet'] ?? 'N/A'}'),
+              Text('Eski Fiyat: ${product['Eski Fiyat'] ?? 'N/A'}'),
+              Text('Değiştiren: ${product['Değiştiren'] ?? 'N/A'}'),
+              Text('Fiyat Açıklaması: ${product['Fiyat Açıklaması'] ?? 'N/A'}'),
+              Text('İşlem Tarihi: ${product['İşlem Tarihi'] ?? 'N/A'}'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
 
@@ -139,7 +188,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                       customerProducts[index]['Adet Fiyatı'] = priceController.text;
                     }
                     customerProducts[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now());
-                    saveEditsToDatabase(index);
+                    saveEditsToDatabase(index); // Değişiklikleri veritabanına kaydet
                     updateTotalAndVat();
                     isEditing = false;
                     editingIndex = -1;
@@ -156,6 +205,9 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
+
+
+
   void updateTotalAndVat() {
     double toplamTutar = 0.0;
     customerProducts.forEach((product) {
@@ -356,13 +408,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     });
     saveKitsToFirestore();
   }
-
-
-
-
-
-
-
 
 
   Future<void> saveKitsToFirestore() async {
@@ -737,10 +782,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
     bool hasExpectedInfo = product['buttonInfo'] == 'B.sipariş';
 
-    if (!showInfoButtons || (!hasQuoteInfo && !hasKitInfo && !hasSalesInfo && !hasExpectedInfo)) {
-      return Container();
-    }
-
+    // showInfoButtons kontrolünü kaldırıyoruz, böylece her zaman info butonu görünür
     return Column(
       children: [
         if (hasQuoteInfo)
@@ -773,14 +815,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       ],
     );
   }
-
-
-
-
-
-
-
-
 
 
   void showExpectedQuoteInfoDialog(Map<String, dynamic> product) {
@@ -819,8 +853,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
 
-
-
   void showInfoDialogForExpectedQuote(Map<String, dynamic> product) {
     DateTime? readyDate;
     if (product['Ürün Hazır Olma Tarihi'] != null) {
@@ -854,9 +886,6 @@ class _ProductsWidgetState extends State<ProductsWidget> {
       },
     );
   }
-
-
-
 
 
   void showInfoDialogForQuote(Map<String, dynamic> product) {
@@ -925,6 +954,98 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
 
+  void processSelectedProductsToAccountTracking() async {
+    List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) {
+      var product = Map<String, dynamic>.from(customerProducts[index]);
+
+      // Tarih bilgisini Timestamp olarak ekle
+      product['tarih'] = Timestamp.now();
+
+      return product;
+    }).toList();
+
+    try {
+      // Müşteriye ait cari hesap belgesini bul
+      var querySnapshot = await FirebaseFirestore.instance
+          .collection('cariHesaplar')
+          .where('customerName', isEqualTo: widget.customerName)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        // Müşteri için bir cari hesap varsa, mevcut ürünleri al
+        var docRef = querySnapshot.docs.first.reference;
+        var data = querySnapshot.docs.first.data();
+
+        // Mevcut ürünler listesi
+        List<dynamic> existingProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);
+
+        // Yeni ürünleri mevcut listeye ekle
+        existingProducts.addAll(selectedProducts);
+
+        // Firestore'a güncellenmiş ürün listesini kaydet
+        await docRef.update({
+          'products': existingProducts,
+        });
+      } else {
+        // Eğer müşteri için cari hesap yoksa, yeni bir cari hesap oluştur
+        await FirebaseFirestore.instance.collection('cariHesaplar').add({
+          'customerName': widget.customerName,
+          'products': selectedProducts,
+        });
+      }
+
+      setState(() {
+        // Sadece seçilen ürünleri customerProducts listesinden sil
+        selectedIndexes.forEach((index) {
+          customerProducts[index]['processed'] = true;  // Ürün işlenmiş olarak işaretle
+        });
+
+        // Filtreleme ile sadece işlenmemiş ürünleri koru
+        customerProducts = customerProducts.where((product) => product['processed'] != true).toList();
+
+        // Seçilen ürünleri işledikten sonra seçili dizini temizle
+        selectedIndexes.clear();
+        showRadioButtons = false;
+      });
+
+      // Firestore'daki 'customerDetails' koleksiyonuna güncellemeyi kaydet
+      var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+      var customerSnapshot = await customerCollection.where('customerName', isEqualTo: widget.customerName).limit(1).get();
+
+      if (customerSnapshot.docs.isNotEmpty) {
+        var docRef = customerSnapshot.docs.first.reference;
+        await docRef.update({
+          'products': customerProducts,
+        });
+      }
+
+      // CariHesapTakipScreen widget'ına yönlendir
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => CariHesapTakipScreen(
+            customerName: widget.customerName,
+            products: selectedProducts,
+          ),
+        ),
+      );
+    } catch (error) {
+      print("Error while processing products to account tracking: $error");
+      // Hata durumunda ekranda mesaj gösterebilirsiniz
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -971,10 +1092,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
 
   @override
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        SizedBox(height: 20),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
@@ -1004,10 +1125,14 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                   },
                   child: Text('Hepsini Seç'),
                 ),
+              if (showRadioButtons)
+                ElevatedButton(
+                  onPressed: processSelectedProductsToAccountTracking,
+                  child: Text('Cari Hesaba İşle'),
+                ),
             ],
           ),
         ),
-
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(
@@ -1065,6 +1190,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 columns: [
+                  if (showRadioButtons) DataColumn(label: Container()), // Boş başlık sütunu eklendi
                   DataColumn(label: Text('Kodu')),
                   DataColumn(label: Text('Detay')),
                   DataColumn(label: Text('Adet')),
@@ -1080,60 +1206,121 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                       product['Adet Fiyatı']?.toString() == 'KDV %20' ||
                       product['Adet Fiyatı']?.toString() == 'Genel Toplam';
 
-                  return DataRow(cells: [
-                    DataCell(Text(product['Kodu']?.toString() ?? '')),
-                    DataCell(Text(product['Detay']?.toString() ?? '')),
-                    DataCell(
-                      isTotalRow
-                          ? Text('')
-                          : Row(
-                        children: [
-                          isEditing && editingIndex == index
-                              ? Expanded(
-                            child: TextField(
-                              controller: quantityController,
-                              keyboardType: TextInputType.number,
-                              decoration: InputDecoration(
-                                hintText: 'Adet',
+                  return DataRow(
+                    cells: [
+                      if (showRadioButtons)
+                        DataCell(
+                          Checkbox(
+                            value: selectedIndexes.contains(index),
+                            onChanged: (bool? selected) {
+                              setState(() {
+                                if (selected == true) {
+                                  selectedIndexes.add(index);
+                                } else {
+                                  selectedIndexes.remove(index);
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                      DataCell(Text(product['Kodu']?.toString() ?? '')),
+                      DataCell(Text(product['Detay']?.toString() ?? '')),
+
+                      // Adet hücresi
+                      DataCell(
+                        isTotalRow
+                            ? Text(product['Adet']?.toString() ?? '') // Toplam satırları kontrol etmek için
+                            : Row(
+                          children: [
+                            isEditing && editingIndex == index
+                                ? Expanded(
+                              child: TextField(
+                                controller: quantityController, // Adet için controller
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  hintText: 'Adet',
+                                ),
+                                onChanged: (value) {
+                                  updateQuantity(index, value); // Adet güncellenmesi
+                                },
+                                onSubmitted: (value) {
+                                  showExplanationDialog(index, true, false); // Açıklama girilmesi
+                                },
                               ),
-                              onChanged: (value) {
-                                updateQuantity(index, value);
-                              },
-                              onSubmitted: (value) {
-                                showExplanationDialog(index, true, false);
-                              },
-                            ),
-                          )
-                              : Text(product['Adet']?.toString() ?? ''),
-                        ],
+                            )
+                                : Text(product['Adet']?.toString() ?? ''),
+                            if (product['Adet Açıklaması'] != null) // Sadece adet değiştiyse buton göster
+                              IconButton(
+                                icon: Icon(Icons.info, color: Colors.blue),
+                                onPressed: () {
+                                  showInfoDialogForProduct(product); // Doğru fonksiyon adı burada çağrılıyor
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    DataCell(
-                      isTotalRow
-                          ? Text(product['Adet Fiyatı']?.toString() ?? '')
-                          : Text(product['Adet Fiyatı']?.toString() ?? ''),
-                    ),
-                    DataCell(Text(product['İskonto']?.toString() ?? '')),
-                    DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
-                    DataCell(
-                      isTotalRow
-                          ? Container()
-                          : IconButton(
-                        icon: Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () {
-                          setState(() {
-                            isEditing = true;
-                            editingIndex = index;
-                            originalProductData = Map<String, dynamic>.from(product);
-                            quantityController.text = product['Adet']?.toString() ?? '';
-                          });
-                        },
+
+                      // Adet Fiyatı hücresi
+                      DataCell(
+                        isTotalRow
+                            ? Text(product['Adet Fiyatı']?.toString() ?? '')
+                            : Row(
+                          children: [
+                            isEditing && editingIndex == index
+                                ? Expanded(
+                              child: TextField(
+                                controller: priceController, // Adet Fiyatı için controller
+                                keyboardType: TextInputType.number,
+                                decoration: InputDecoration(
+                                  hintText: 'Adet Fiyatı',
+                                ),
+                                onChanged: (value) {
+                                  updatePrice(index, value); // Adet Fiyatı güncellenmesi
+                                },
+                                onSubmitted: (value) {
+                                  showExplanationDialog(index, false, true); // Açıklama girilmesi
+                                },
+                              ),
+                            )
+                                : Text(product['Adet Fiyatı']?.toString() ?? ''),
+                            if (product['Fiyat Açıklaması'] != null) // Sadece fiyat değiştiyse buton göster
+                              IconButton(
+                                icon: Icon(Icons.info, color: Colors.blue),
+                                onPressed: () {
+                                  showInfoDialogForProduct(product); // Doğru fonksiyon adı burada çağrılıyor
+                                },
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                    DataCell(
-                      buildInfoButton(product),
-                    ),
-                  ]);
+
+                      DataCell(Text(product['İskonto']?.toString() ?? '')),
+                      DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+
+                      // Düzenle hücresi
+                      DataCell(
+                        isTotalRow
+                            ? Container()
+                            : IconButton(
+                          icon: Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () {
+                            setState(() {
+                              isEditing = true;
+                              editingIndex = index;
+                              originalProductData = Map<String, dynamic>.from(product);
+                              quantityController.text = product['Adet']?.toString() ?? '';
+                              priceController.text = product['Adet Fiyatı']?.toString() ?? ''; // Adet fiyatı için
+                            });
+                          },
+                        ),
+                      ),
+
+                      // Bilgi butonlarını kontrol eden hücre
+                      DataCell(
+                        buildInfoButton(product), // Bilgi butonları sadece değişiklik yapılırsa görünecek
+                      ),
+                    ],
+                  );
                 }).toList(),
               ),
             ),
