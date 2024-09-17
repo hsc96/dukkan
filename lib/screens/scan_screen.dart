@@ -20,10 +20,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:ui' as ui; // Use ui for TextDirection
 import 'customer_selection_service.dart';
 import 'custom_header_screen.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 
 class ScanScreen extends StatefulWidget {
   final Function(Map<String, dynamic>) onCustomerProcessed;
   final String? documentId; // Make it nullable
+
 
 
   ScanScreen({
@@ -45,6 +48,13 @@ class _ScanScreenState extends State<ScanScreen> {
   String euroKur = "";
   double subtotal = 0.0;
   double vat = 0.0;
+  bool _isConnected = true; // İnternet bağlantısı durumu
+
+
+  bool isProcessing = false;
+  ConnectivityResult _connectivityResult = ConnectivityResult.none;
+  final Connectivity _connectivity = Connectivity();
+
   double grandTotal = 0.0;
   String currentUserName = ''; // Mevcut kullanıcının ismi burada tutulacak
   String currentDate = DateFormat('d MMMM y', 'tr_TR').format(
@@ -52,6 +62,7 @@ class _ScanScreenState extends State<ScanScreen> {
   final CustomerSelectionService _customerSelectionService = CustomerSelectionService();
   ScrollController _scrollController = ScrollController();
 
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   User? currentUser;
   List<Map<String, dynamic>> scannedProducts = [];
@@ -68,6 +79,7 @@ class _ScanScreenState extends State<ScanScreen> {
   int editingIndex = -1;
   Map<String, dynamic>? originalProductData;
   TextEditingController quantityController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +89,23 @@ class _ScanScreenState extends State<ScanScreen> {
     fetchCustomers();           // Mevcut müşterileri çek
     initializeDovizKur();       // Döviz kurlarını başlat
     fetchCurrentUser();         // Mevcut kullanıcıyı çek
+
+    // Mevcut internet bağlantısı durumunu kontrol edin
+    _checkInitialConnectivity();
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+
+      print('Connectivity Changed: $_isConnected'); // Debug için
+
+      // Eğer internet bağlantısı yoksa, updateProductsForCustomer() fonksiyonunu çağır
+      if (!_isConnected) {
+        updateProductsForCustomer();
+      }
+    });
 
     // Firestore Stream dinleyici ekleyin
     FirebaseFirestore.instance
@@ -98,6 +127,15 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
 
+  @override
+  void dispose() {
+    connectivitySubscription.cancel();
+    _scrollController.dispose();
+    searchController.dispose(); // Eğer kullanıyorsanız
+    super.dispose();
+  }
+
+
   Future<void> _loadInitialData() async {
     // Seçili müşteri ve ürünleri yükle
     selectedCustomer = await _customerSelectionService.getSelectedCustomer();
@@ -109,6 +147,7 @@ class _ScanScreenState extends State<ScanScreen> {
   Future<void> fetchCurrentUser() async {
     currentUser = _auth.currentUser;
   }
+
 
   Future<void> getCurrentUserName() async {
     User? currentUser = FirebaseAuth.instance.currentUser;
@@ -199,7 +238,37 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
+
+  Future<bool> isConnected() async {
+    var connectivityResult = await (Connectivity().checkConnectivity());
+    return connectivityResult != ConnectivityResult.none;
+  }
+
   Future<void> processSale() async {
+    // İnternet bağlantısını kontrol edelim
+    bool connected = await isConnected();
+    if (!connected) {
+      // Eğer internet yoksa işlemi durdur ve kullanıcıya uyarı ver
+      await showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Bağlantı Sorunu'),
+            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Dialog'u kapat
+                },
+                child: Text('Tamam'),
+              ),
+            ],
+          );
+        },
+      );
+      return; // İşlem iptal
+    }
+
     if (selectedCustomer == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -283,8 +352,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'recipient': 'Teslim Alan',
         'contactPerson': 'İlgili Kişi',
         'orderMethod': 'Telefon',
-        'siparisTarihi':
-        DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
@@ -353,7 +421,7 @@ class _ScanScreenState extends State<ScanScreen> {
         'saleNumber': saleNumber, // Satış numarasını ekleyelim
       });
 
-      // temporarySelections belgesini silelim
+      // İşlem başarılı olduğunda temporarySelections belgesini silelim
       await FirebaseFirestore.instance
           .collection('temporarySelections')
           .doc(widget.documentId)
@@ -367,13 +435,29 @@ class _ScanScreenState extends State<ScanScreen> {
           // Diğer gerekli sıfırlamaları yapın
         });
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
+        // Önce bir uyarı mesajı gösterelim
+        await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: Text('İşlem Tamamlandı'),
+              content: Text('Anasayfaya yönlendiriliyorsunuz.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Dialog'u kapat
+                    // Ardından kullanıcıyı CustomHeaderScreen'e yönlendirelim
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => CustomHeaderScreen()),
+                    );
+                  },
+                  child: Text('Tamam'),
+                ),
+              ],
             );
-          }
-        });
+          },
+        );
       }
     } catch (e) {
       print('Hata oluştu: $e');
@@ -381,13 +465,18 @@ class _ScanScreenState extends State<ScanScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Veri işlenirken hata oluştu')),
+              SnackBar(content: Text('İşlem tamamlanamadı: $e')),
             );
           }
         });
       }
+      // Hata durumunda temporarySelections belgesini SİLMİYORUZ
+      // Veriler korunuyor, kullanıcı tekrar deneyebilir
     }
   }
+
+
+
 
 
 
@@ -510,12 +599,46 @@ class _ScanScreenState extends State<ScanScreen> {
 
 
 
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
 
 
 
 
   Future<void> updateProductPricesForCustomer() async {
-    if (selectedCustomer == null) return;
+      if (selectedCustomer == null) return;
 
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = scannedProducts[i];
@@ -1604,14 +1727,16 @@ class _ScanScreenState extends State<ScanScreen> {
         print("Firestore '${widget.documentId}' verisi başarıyla silindi");
 
         // UI'ı temizle
-        setState(() {
-          selectedCustomer = null;
-          scannedProducts.clear();
-          originalProducts.clear();
-          toplamTutar = 0.0;
-          kdv = 0.0;
-          genelToplam = 0.0;
-        });
+        if (mounted) {
+          setState(() {
+            selectedCustomer = null;
+            scannedProducts.clear();
+            originalProducts.clear();
+            toplamTutar = 0.0;
+            kdv = 0.0;
+            genelToplam = 0.0;
+          });
+        }
 
         // Kullanıcıya bilgi mesajı göster ve yönlendir
         await showDialog(
@@ -1632,7 +1757,7 @@ class _ScanScreenState extends State<ScanScreen> {
           },
         );
 
-        // İsteğe bağlı olarak kullanıcıyı yönlendir
+        // İsteğe bağlı olarak kullanıcıyı yönlendirin
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (context) => CustomHeaderScreen()),
@@ -1640,13 +1765,17 @@ class _ScanScreenState extends State<ScanScreen> {
       }).catchError((error) {
         print('Belge silinirken hata oluştu: $error');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Belge silinirken hata oluştu: $error')),
+          SnackBar(content: Text('Veri temizlenirken hata oluştu: $error')),
         );
       });
     } else {
       print("Hata: documentId null");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Belge silinirken hata oluştu: Document ID bulunamadı.')),
+      );
     }
   }
+
 
 
 
@@ -1705,10 +1834,22 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
 
+  Future<bool> checkInternetConnectivity() async {
+    var connectivityResult = await (Connectivity().checkConnectivity());
+
+    if (connectivityResult == ConnectivityResult.mobile ||
+        connectivityResult == ConnectivityResult.wifi) {
+      // Eğer mobil veri veya Wi-Fi bağlıysa internet var
+      return true;
+    } else {
+      // Bağlantı yok
+      return false;
+    }
+  }
 
 
 
-
+  @override
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1717,18 +1858,28 @@ class _ScanScreenState extends State<ScanScreen> {
       body: Column(
         children: [
           SizedBox(height: 20),
+          // Üstteki satır
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(
                 icon: Icon(CupertinoIcons.barcode, size: 24, color: colorTheme5),
-                onPressed: scanBarcode,
+                onPressed: () {
+                  if (_isConnected) {
+                    scanBarcode();
+                  } else {
+                    _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, barkod taraması yapılamıyor.');
+                  }
+                },
               ),
+
+
+
               Row(
                 children: [
                   DropdownButton<String>(
                     hint: Text('MÜŞTERİ SEÇ'),
-                    value: selectedCustomer,
+                    value: selectedCustomer, // Seçili müşteri
                     icon: Icon(Icons.arrow_downward),
                     iconSize: 24,
                     elevation: 16,
@@ -1739,9 +1890,17 @@ class _ScanScreenState extends State<ScanScreen> {
                     ),
                     onChanged: (String? newValue) async {
                       if (newValue != null) {
-                        await _selectCustomer(newValue);
-                        await updateDiscountAndBrandForCustomer();
-                        setState(() {});
+                        if (_isConnected) {
+                          // İnternet varsa işlemi gerçekleştirin
+                          await _selectCustomer(newValue);
+                          await updateDiscountAndBrandForCustomer();
+                          setState(() {
+                            selectedCustomer = newValue; // Seçilen müşteri kaydediliyor
+                          });
+                        } else {
+                          // İnternet yoksa, dialog göster
+                          _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, müşteri seçimi yapılamıyor.');
+                        }
                       }
                     },
                     items: filteredCustomers.map<DropdownMenuItem<String>>((String value) {
@@ -1751,13 +1910,13 @@ class _ScanScreenState extends State<ScanScreen> {
                       );
                     }).toList(),
                   ),
+
                 ],
               ),
             ],
           ),
-
-
           SizedBox(height: 10),
+          // Müşteri arama alanı ve yenile butonu
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Row(
@@ -1787,7 +1946,7 @@ class _ScanScreenState extends State<ScanScreen> {
             ),
           ),
           SizedBox(height: 30),
-          Expanded( // Expanded widget'ı burada kullanılıyor
+          Expanded(
             child: StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance.collection('temporarySelections').doc(widget.documentId).snapshots(),
               builder: (context, snapshot) {
@@ -1834,22 +1993,36 @@ class _ScanScreenState extends State<ScanScreen> {
                                 DataCell(Text(product['Kodu']?.toString() ?? '')),
                                 DataCell(Text(product['Detay']?.toString() ?? '')),
                                 DataCell(
-                                  TextField(
+                                  _isConnected
+                                      ? TextField(
                                     keyboardType: TextInputType.number,
                                     decoration: InputDecoration(
                                       border: OutlineInputBorder(),
                                     ),
                                     onChanged: (value) {
+                                      // Ürün miktarını güncelle
                                       scannedProducts[index]['Adet'] = value;
                                     },
                                     onSubmitted: (value) {
+                                      // Güncellemeyi yap
                                       updateQuantity(index, value);
                                     },
                                     controller: TextEditingController(
-                                        text: scannedProducts[index]['Adet']?.toString() ?? ''
+                                      text: scannedProducts[index]['Adet']?.toString() ?? '',
+                                    ),
+                                  )
+                                      : GestureDetector(
+                                    onTap: () {
+                                      // İnternet yoksa, uyarı göster
+                                      _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, miktar güncellenemiyor.');
+                                    },
+                                    child: Text(
+                                      scannedProducts[index]['Adet']?.toString() ?? '0',
+                                      style: TextStyle(fontSize: 16.0, color: Colors.grey),
                                     ),
                                   ),
                                 ),
+
                                 DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
                                 DataCell(Text(product['İskonto']?.toString() ?? '')),
                                 DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
@@ -1861,12 +2034,17 @@ class _ScanScreenState extends State<ScanScreen> {
                                       IconButton(
                                         icon: Icon(Icons.edit, color: Colors.grey),
                                         onPressed: () {
-                                          setState(() {
-                                            isEditing = true;
-                                            editingIndex = index;
-                                            originalProductData = Map<String, dynamic>.from(product);
-                                            quantityController.text = product['Adet']?.toString() ?? '';
-                                          });
+                                          if (_isConnected) {
+                                            setState(() {
+                                              isEditing = true;
+                                              editingIndex = index;
+                                              originalProductData = Map<String, dynamic>.from(product);
+                                              quantityController.text = product['Adet']?.toString() ?? '';
+                                            });
+                                          } else {
+                                            // İnternet yoksa uyarı göster
+                                            _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, düzenleme yapılamıyor.');
+                                          }
                                         },
                                       ),
                                       if (isEditing && editingIndex == index)
@@ -1875,12 +2053,24 @@ class _ScanScreenState extends State<ScanScreen> {
                                             IconButton(
                                               icon: Icon(Icons.check, color: Colors.green),
                                               onPressed: () {
-                                                handleEditSubmit(index);
+                                                if (_isConnected) {
+                                                  handleEditSubmit(index);
+                                                } else {
+                                                  // İnternet yoksa uyarı göster
+                                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
+                                                }
                                               },
                                             ),
                                             IconButton(
                                               icon: Icon(Icons.delete, color: Colors.red),
-                                              onPressed: () => removeProduct(index),
+                                              onPressed: () {
+                                                if (_isConnected) {
+                                                  removeProduct(index);
+                                                } else {
+                                                  // İnternet yoksa uyarı göster
+                                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
+                                                }
+                                              },
                                             ),
                                             IconButton(
                                               icon: Icon(Icons.close, color: Colors.red),
@@ -1892,10 +2082,12 @@ class _ScanScreenState extends State<ScanScreen> {
                                         ),
                                     ],
                                   ),
+
+
                                 ),
                               ]);
                             }).toList(),
-                            // Toplam bilgilerini tabloya ekleyin
+                            // Toplam satırları
                             DataRow(cells: [
                               DataCell(Text('')),
                               DataCell(Text('Toplam Tutar')),
@@ -1923,10 +2115,11 @@ class _ScanScreenState extends State<ScanScreen> {
                               DataCell(Text(grandTotal.toStringAsFixed(2))),
                               DataCell(Text('')),
                             ]),
-
                           ],
                         ),
                       ),
+                      // ... Diğer kodlar ...
+
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 5.0),
                         child: Row(
@@ -1934,139 +2127,166 @@ class _ScanScreenState extends State<ScanScreen> {
                           children: [
                             ElevatedButton(
                               onPressed: () async {
-                                bool shouldProceed = await showDialog(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return AlertDialog(
-                                      title: Text('Teklif Oluştur'),
-                                      content: Text('Teklif oluşturmak istediğinizden emin misiniz?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).pop(false);  // İşlemi iptal et
-                                          },
-                                          child: Text('Hayır'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).pop(true);  // İşleme devam et
-                                          },
-                                          child: Text('Evet'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
-
-                                if (shouldProceed && mounted) {
-                                  try {
-                                    // Teklif oluşturma işlemi
-                                    DocumentReference quoteRef = await generateQuote();
-
-                                    // Sayfa verilerini temizle
-                                    clearScreen();
-
-                                    // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
-                                    await Future.delayed(Duration(seconds: 1));
-
-                                    if (mounted) {
-                                      // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
-                                      DocumentSnapshot quoteSnapshot = await quoteRef.get();
-                                      String quoteNumber = quoteSnapshot['quoteNumber'];
-                                      String customerName = quoteSnapshot['customerName'];
-
-                                      // Bilgi mesajını sayfa tamamen yenilendikten sonra göster
-                                      await showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return AlertDialog(
-                                            title: Text('Teklif Oluşturuldu'),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text('Teklif No: $quoteNumber'),
-                                                Text('Müşteri: $customerName'),
-                                                SizedBox(height: 8),
-                                                Text('Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
-                                              ],
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () {
-                                                  Navigator.of(context).pop();  // Dialog'u kapat
-                                                },
-                                                child: Text('Tamam'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('Teklif oluşturulurken bir hata oluştu: $e'),
-                                            duration: Duration(seconds: 5),
+                                if (_isConnected) {
+                                  // Normal 'Teklif Ver' işlemleri...
+                                  bool shouldProceed = await showDialog(
+                                    context: context,
+                                    builder: (BuildContext context) {
+                                      return AlertDialog(
+                                        title: Text('Teklif Oluştur'),
+                                        content: Text('Teklif oluşturmak istediğinizden emin misiniz?'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).pop(false); // İşlemi iptal et
+                                            },
+                                            child: Text('Hayır'),
                                           ),
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.of(context).pop(true); // İşleme devam et
+                                            },
+                                            child: Text('Evet'),
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  );
+
+                                  if (shouldProceed && mounted) {
+                                    // Teklif oluşturma işlemleri...
+                                    try {
+                                      // Teklif oluşturma işlemi
+                                      DocumentReference quoteRef = await generateQuote();
+
+                                      // Sayfa verilerini temizle
+                                      clearScreen();
+
+                                      // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
+                                      await Future.delayed(Duration(seconds: 1));
+
+                                      if (mounted) {
+                                        // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
+                                        DocumentSnapshot quoteSnapshot = await quoteRef.get();
+                                        String quoteNumber = quoteSnapshot['quoteNumber'];
+                                        String customerName = quoteSnapshot['customerName'];
+
+                                        // Bilgi mesajını sayfa tamamen yenilendikten sonra göster
+                                        await showDialog(
+                                          context: context,
+                                          builder: (BuildContext context) {
+                                            return AlertDialog(
+                                              title: Text('Teklif Oluşturuldu'),
+                                              content: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text('Teklif No: $quoteNumber'),
+                                                  Text('Müşteri: $customerName'),
+                                                  SizedBox(height: 8),
+                                                  Text('Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
+                                                ],
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.of(context).pop(); // Dialog'u kapat
+                                                  },
+                                                  child: Text('Tamam'),
+                                                ),
+                                              ],
+                                            );
+                                          },
                                         );
-                                      });
+                                      }
+                                    } catch (e) {
+                                      if (mounted) {
+                                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Teklif oluşturulurken bir hata oluştu: $e'),
+                                              duration: Duration(seconds: 5),
+                                            ),
+                                          );
+                                        });
+                                      }
                                     }
                                   }
+                                } else {
+                                  // İnternet yoksa uyarı göster
+                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
                                 }
                               },
                               child: Text('Teklif Ver'),
-                            )
-
-
-
-
-
-
-
-
-
-
-
-
-                            ,SizedBox(height: 100),
+                            ),
                             ElevatedButton(
                               onPressed: () async {
-                                bool shouldProceed = await showProcessingDialog();
+                                if (_isConnected) {
+                                  bool shouldProceed = await showProcessingDialog();
 
-                                if (shouldProceed) {
-                                  await processSale();
-                                  await clearSelections();
-                                  clearScreen(); // Ekranı temizle
+                                  if (shouldProceed) {
+                                    await processSale();
+                                    await clearSelections();
+                                    clearScreen(); // Ekranı temizle
+                                  } else {
+                                    print('İşlem iptal edildi, veriler silinmedi.');
+                                  }
                                 } else {
-                                  print('İşlem iptal edildi, veriler silinmedi.');
+                                  // İnternet yoksa uyarı göster
+                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
                                 }
                               },
                               child: Text('Hesaba İşle'),
                             ),
                             ElevatedButton(
                               onPressed: () async {
-                                await processCashPayment();
-                                await clearSelections();
-                                clearScreen(); // Ekranı temizle
+                                if (_isConnected) {
+                                  await processCashPayment();
+                                  await clearSelections();
+                                  clearScreen(); // Ekranı temizle
+                                } else {
+                                  // İnternet yoksa uyarı göster
+                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
+                                }
                               },
                               child: Text('Nakit Tahsilat'),
                             ),
+
                             ElevatedButton(
-                              onPressed: saveAsPDF,
+                              onPressed: _isConnected
+                                  ? saveAsPDF
+                                  : () {
+                                // İnternet yoksa uyarı göster
+                                showDialog(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return AlertDialog(
+                                      title: Text('Bağlantı Sorunu'),
+                                      content: Text('İnternet bağlantısı yok, lütfen internetinizi kontrol edin.'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.of(context).pop(); // Dialog'u kapat
+                                          },
+                                          child: Text('Tamam'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
                               child: Text('PDF\'e Dönüştür'),
                             ),
                           ],
                         ),
                       ),
+
+
                     ],
                   ),
                 );
               },
             ),
           ),
-
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
@@ -2078,27 +2298,21 @@ class _ScanScreenState extends State<ScanScreen> {
 
           double calculateTotalTextWidth(double fontSize) {
             return (TextPainter(
-                text: TextSpan(
-                    text: '1 USD: $dolarKur',
-                    style: TextStyle(fontSize: fontSize)),
+                text: TextSpan(text: '1 USD: $dolarKur', style: TextStyle(fontSize: fontSize)),
                 maxLines: 1,
                 textDirection: ui.TextDirection.ltr)
               ..layout())
                 .size
                 .width +
                 (TextPainter(
-                    text: TextSpan(
-                        text: currentDate,
-                        style: TextStyle(fontSize: fontSize)),
+                    text: TextSpan(text: currentDate, style: TextStyle(fontSize: fontSize)),
                     maxLines: 1,
                     textDirection: ui.TextDirection.ltr)
                   ..layout())
                     .size
                     .width +
                 (TextPainter(
-                    text: TextSpan(
-                        text: '1 EUR: $euroKur',
-                        style: TextStyle(fontSize: fontSize)),
+                    text: TextSpan(text: '1 EUR: $euroKur', style: TextStyle(fontSize: fontSize)),
                     maxLines: 1,
                     textDirection: ui.TextDirection.ltr)
                   ..layout())
@@ -2107,8 +2321,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 32.0;
           }
 
-          while (calculateTotalTextWidth(fontSize) > screenWidth &&
-              fontSize > 10) {
+          while (calculateTotalTextWidth(fontSize) > screenWidth && fontSize > 10) {
             fontSize -= 1;
           }
 
@@ -2118,18 +2331,15 @@ class _ScanScreenState extends State<ScanScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('1 USD: $dolarKur',
-                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
-                Text(currentDate,
-                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
-                Text('1 EUR: $euroKur',
-                    style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text('1 USD: $dolarKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text(currentDate, style: TextStyle(fontSize: fontSize, color: Colors.black)),
+                Text('1 EUR: $euroKur', style: TextStyle(fontSize: fontSize, color: Colors.black)),
               ],
             ),
           );
         },
       ),
     );
-
   }
+
 }

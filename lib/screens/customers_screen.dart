@@ -11,7 +11,8 @@ import 'custom_drawer.dart';
 import '../providers/loading_provider.dart';
 import 'customer_details_screen.dart';
 import 'update_all_documents.dart';
-
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async';
 class CustomersScreen extends StatefulWidget {
   @override
   _CustomersScreenState createState() => _CustomersScreenState();
@@ -30,30 +31,24 @@ class _CustomersScreenState extends State<CustomersScreen> {
   bool isFetchingAdditionalCustomers = false;
   bool isSearching = false;
   double totalInvoiceAmount = 0;
+  bool _isConnected = true;
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
 
 
   @override
   void initState() {
     super.initState();
 
-    // Firebase Stream Listener for real-time updates
-    getCustomersStream().listen((querySnapshot) {
-      var updatedCustomers = querySnapshot.docs.map((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        return {
-          'Açıklama': data['Açıklama'] ?? 'Açıklama bilgisi yok',
-          'Fatura Kesilecek Tutar': data['Fatura Kesilecek Tutar'] ?? 0.0,
-        };
-      }).toList();
+    // Mevcut internet bağlantısı durumunu kontrol edin
+    _checkInitialConnectivity();
 
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
       setState(() {
-        filteredCustomers = updatedCustomers;
-
-        // Update the total invoice amount
-        totalInvoiceAmount = updatedCustomers.fold(0.0, (sum, customer) {
-          return sum + (customer['Fatura Kesilecek Tutar'] ?? 0.0);
-        });
+        _isConnected = result != ConnectivityResult.none;
       });
+      print('Connectivity Changed: $_isConnected'); // Debug için
     });
 
     fetchInitialCustomers();
@@ -84,6 +79,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       }
     });
   }
+
 
 
 
@@ -167,6 +163,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
 
   @override
   void dispose() {
+    connectivitySubscription.cancel();
     scrollController.dispose();
     searchController.dispose();
     super.dispose();
@@ -609,6 +606,21 @@ class _CustomersScreenState extends State<CustomersScreen> {
     });
   }
 
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -645,19 +657,69 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 ),
                 IconButton(
                   icon: Icon(Icons.add, color: colorTheme5),
-                  onPressed: pickJsonFile,
+                  onPressed: () {
+                    if (_isConnected) {
+                      pickJsonFile();
+                    } else {
+                      // İnternet yoksa uyarı göster
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text('Bağlantı Sorunu'),
+                            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop(); // Dialog'u kapat
+                                },
+                                child: Text('Tamam'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    }
+                  },
                 ),
+
+
+
                 IconButton(
                   icon: Icon(Icons.update, color: colorTheme5),
                   onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => UpdateAllDocumentsScreen(),
-                      ),
-                    );
+                    if (_isConnected) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => UpdateAllDocumentsScreen(),
+                        ),
+                      );
+                    } else {
+                      // İnternet yoksa uyarı göster
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text('Bağlantı Sorunu'),
+                            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop(); // Dialog'u kapat
+                                },
+                                child: Text('Tamam'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    }
                   },
                 ),
+
+
+
               ],
             ),
           ),

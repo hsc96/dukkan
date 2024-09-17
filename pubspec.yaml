@@ -30,6 +30,7 @@ dependencies:
   printing: ^5.13.1
   excel: ^4.0.3
   syncfusion_flutter_xlsio: ^26.1.41
+  connectivity_plus: ^3.0.3
 
 dev_dependencies:
   flutter_test:

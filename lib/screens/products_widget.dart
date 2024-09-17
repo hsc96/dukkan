@@ -5,6 +5,8 @@ import 'package:barcode_scan2/barcode_scan2.dart';
 import 'products_pdf.dart';
 import 'products_excel.dart';
 import 'account_tracking_screen.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ProductsWidget extends StatefulWidget {
   final String customerName;
@@ -40,23 +42,60 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   List<Map<String, dynamic>> tempProducts = [];
   List<Map<String, dynamic>> originalProducts = [];
   bool showInfoButtons = false;
+  bool _isConnected = true;
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
 
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
 
+  @override
 
   @override
   void initState() {
     super.initState();
+
+    // Mevcut internet bağlantısı durumunu kontrol edin
+    _checkInitialConnectivity();
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+    });
+
     fetchCustomerProducts();
     fetchKits();
   }
+
   void generateExcel() {
     List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
     ProductsExcel.generateProductsExcel(selectedProducts, widget.customerName);
   }
 
+
+
   void generatePDF() {
     List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
     ProductsPDF.generateProductsPDF(selectedProducts, true);
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel();
+    super.dispose();
   }
 
   Future<void> fetchCustomerProducts() async {
@@ -695,6 +734,10 @@ class _ProductsWidgetState extends State<ProductsWidget> {
     );
   }
 
+
+
+
+
   void showProcessDialog() {
     if (selectedIndexes.isEmpty) {
       showDialog(
@@ -954,7 +997,30 @@ class _ProductsWidgetState extends State<ProductsWidget> {
   }
 
 
-  void processSelectedProductsToAccountTracking() async {
+  Future<void> processSelectedProductsToAccountTracking() async {
+    if (!_isConnected) {
+      // İnternet yoksa uyarı göster
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Bağlantı Sorunu'),
+            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Dialog'u kapat
+                },
+                child: Text('Tamam'),
+              ),
+            ],
+          );
+        },
+      );
+      return;
+    }
+
+    // İnternet varsa işlemlere devam edin
     List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) {
       var product = Map<String, dynamic>.from(customerProducts[index]);
 
@@ -1054,6 +1120,7 @@ class _ProductsWidgetState extends State<ProductsWidget> {
 
 
 
+
   void showInfoDialogForSales(Map<String, dynamic> product) {
     showDialog(
       context: context,
@@ -1113,9 +1180,34 @@ class _ProductsWidgetState extends State<ProductsWidget> {
               Text('Ürünleri Seç'),
               if (showRadioButtons)
                 ElevatedButton(
-                  onPressed: showProcessDialog,
+                  onPressed: () {
+                    if (_isConnected) {
+                      showProcessDialog();
+                    } else {
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text('Bağlantı Sorunu'),
+                            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop(); // Dialog'u kapat
+                                },
+                                child: Text('Tamam'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    }
+                  },
                   child: Text('İşle'),
                 ),
+
+
+
               if (showRadioButtons)
                 ElevatedButton(
                   onPressed: () {
@@ -1127,9 +1219,36 @@ class _ProductsWidgetState extends State<ProductsWidget> {
                 ),
               if (showRadioButtons)
                 ElevatedButton(
-                  onPressed: processSelectedProductsToAccountTracking,
+                  onPressed: () {
+                    if (_isConnected) {
+                      // İnternet varsa fonksiyonu çağır
+                      processSelectedProductsToAccountTracking();
+                    } else {
+                      // İnternet yoksa uyarı göster
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text('Bağlantı Sorunu'),
+                            content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop(); // Dialog'u kapat
+                                },
+                                child: Text('Tamam'),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    }
+                  },
                   child: Text('Cari Hesaba İşle'),
                 ),
+
+
+
             ],
           ),
         ),
@@ -1151,22 +1270,76 @@ class _ProductsWidgetState extends State<ProductsWidget> {
           ),
         ),
         if (showRadioButtons)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                ElevatedButton(
-                  onPressed: showKitCreationDialog,
-                  child: Text('Kit Oluştur'),
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_isConnected) {
+                          showKitCreationDialog();
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text('Bağlantı Sorunu'),
+                                content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop(); // Dialog'u kapat
+                                    },
+                                    child: Text('Tamam'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        }
+                      },
+                      child: Text('Kit Oluştur'),
+                    ),
+
+
+                    SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_isConnected) {
+                          showKitAssignmentDialog();
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text('Bağlantı Sorunu'),
+                                content: Text('İnternet bağlantısı yok, işlem gerçekleştirilemiyor.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop(); // Dialog'u kapat
+                                    },
+                                    child: Text('Tamam'),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        }
+                      },
+                      child: Text('Kit Eşleştir'),
+                    ),
+
+
+                  ],
                 ),
-                SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: showKitAssignmentDialog,
-                  child: Text('Kit Eşleştir'),
-                ),
-              ],
-            ),
+              ),
+              // Diğer butonlarınız...
+            ],
           ),
+
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Row(

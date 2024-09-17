@@ -1,12 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'network_service.dart'; // İnternet bağlantısı kontrol eden servis
+import 'package:flutter/material.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<void> addUser(String uid, String email, String role,
-      String fullName) async {
+  // Kullanıcı ekleme işlemi
+  Future<void> addUser(String uid, String email, String role, String fullName) async {
+    // İnternet bağlantısı kontrolü
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     await _db.collection('users').doc(uid).set({
       'email': email,
       'role': role,
@@ -14,9 +21,13 @@ class FirestoreService {
     });
   }
 
+  // Email ile kullanıcı oluşturma
+  Future<void> createUserWithEmail(String email, String password, String role, String fullName) async {
+    // İnternet bağlantısı kontrolü
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
 
-  Future<void> createUserWithEmail(String email, String password, String role,
-      String fullName) async {
     UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -28,7 +39,12 @@ class FirestoreService {
     }
   }
 
+  // Ürün detaylarını çekme
   Future<Map<String, dynamic>> fetchProductDetails(String productCode) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     try {
       QuerySnapshot querySnapshot = await _db
           .collection('urunler')
@@ -47,18 +63,31 @@ class FirestoreService {
     }
   }
 
+  // Telefon numarası ile kullanıcı oluşturma
+  Future<void> createUserWithPhone(String phone, String role, String fullName) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
 
-  Future<void> createUserWithPhone(String phone, String role,
-      String fullName) async {
     // Telefon numarası ile kullanıcı oluşturma işlemleri
     // Bu kısımda Firebase Authentication'ın telefon numarası ile doğrulama yöntemlerini kullanmanız gerekecek
   }
 
+  // Kullanıcı rolünü güncelleme
   Future<void> updateUserRole(String userId, String newRole) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     await _db.collection('users').doc(userId).update({'role': newRole});
   }
 
+  // Barkod ile ürün bulma
   Future<Map<String, dynamic>> getProductByBarcode(String barcode) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     var querySnapshot = await _db.collection('urunler')
         .where('Barkod', isEqualTo: barcode)
         .limit(1)
@@ -70,8 +99,12 @@ class FirestoreService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchProductsByBarcode(
-      String barcode) async {
+  // Barkod ile birden fazla ürün bulma
+  Future<List<Map<String, dynamic>>> fetchProductsByBarcode(String barcode) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     QuerySnapshot querySnapshot = await _db.collection('urunler')
         .where('Barkod', isEqualTo: barcode)
         .get();
@@ -81,7 +114,12 @@ class FirestoreService {
     }).toList();
   }
 
+  // Müşteri adı filtreleme
   Future<List<String>> fetchFilteredCustomers(String query) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     QuerySnapshot querySnapshot = await _db.collection('veritabanideneme')
         .where('Açıklama', isGreaterThanOrEqualTo: query)
         .where('Açıklama', isLessThanOrEqualTo: query + '\uf8ff')
@@ -92,16 +130,19 @@ class FirestoreService {
     }).cast<String>().toList();
   }
 
-  Future<void> updateProductPricesByBrands(List<String> brands,
-      double zamOrani) async {
+  // Markalarına göre ürün fiyatlarını güncelleme
+  Future<void> updateProductPricesByBrands(List<String> brands, double zamOrani) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     QuerySnapshot querySnapshot = await _db.collection('urunler')
         .where('Marka', whereIn: brands)
         .get();
 
     for (var doc in querySnapshot.docs) {
       var data = doc.data() as Map<String, dynamic>;
-      double currentPrice = double.tryParse(data['Fiyat']?.toString() ?? '0') ??
-          0.0;
+      double currentPrice = double.tryParse(data['Fiyat']?.toString() ?? '0') ?? 0.0;
       double newPrice = currentPrice + (currentPrice * zamOrani / 100);
 
       await _db.collection('urunler').doc(doc.id).update(
@@ -109,7 +150,12 @@ class FirestoreService {
     }
   }
 
+  // Markaları listeleme
   Future<List<String>> fetchUniqueBrands() async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     QuerySnapshot querySnapshot = await _db.collection('urunler').get();
     Set<String> brands = Set<String>();
 
@@ -121,8 +167,12 @@ class FirestoreService {
     return brands.toList();
   }
 
-  Future<void> addZamToCollection(String marka, String tarih, String yetkili,
-      double zamOrani) async {
+  // Zam ekleme
+  Future<void> addZamToCollection(String marka, String tarih, String yetkili, double zamOrani) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     await _db.collection('zam').add({
       'marka': marka,
       'tarih': tarih,
@@ -131,7 +181,12 @@ class FirestoreService {
     });
   }
 
+  // Zam listesini çekme
   Future<List<Map<String, dynamic>>> fetchZamListesi() async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     QuerySnapshot querySnapshot = await _db.collection('zam').get();
     return querySnapshot.docs.map((doc) {
       var data = doc.data() as Map<String, dynamic>;
@@ -144,7 +199,12 @@ class FirestoreService {
     }).toList();
   }
 
+  // Müşteri iskontosunu getirme
   Future<Map<String, dynamic>> getCustomerDiscount(String customerName) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
+    }
+
     var querySnapshot = await _db.collection('veritabanideneme')
         .where('Açıklama', isEqualTo: customerName)
         .limit(1)
@@ -156,10 +216,10 @@ class FirestoreService {
     }
   }
 
-  Future<Map<String, dynamic>> getDiscountRates(String discountLevel,
-      String marka) async {
-    if (discountLevel == null || marka == null) {
-      throw Exception('Geçersiz iskonto seviyesi veya marka');
+  // İskonto oranlarını getirme
+  Future<Map<String, dynamic>> getDiscountRates(String discountLevel, String marka) async {
+    if (!await NetworkService.hasInternetConnection()) {
+      throw Exception('İnternet bağlantısı yok');
     }
 
     var querySnapshot = await _db.collection('iskonto')
@@ -169,9 +229,7 @@ class FirestoreService {
 
     if (querySnapshot.docs.isNotEmpty) {
       var data = querySnapshot.docs.first.data();
-      return {
-        'rate': data[discountLevel] ?? 0.0
-      };
+      return {'rate': data[discountLevel] ?? 0.0};
     } else {
       return {'rate': 0.0}; // İskonto oranı bulunamazsa 0.0 döndür
     }
