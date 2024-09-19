@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class AwaitedProductsScreen extends StatefulWidget {
   @override
@@ -11,57 +13,147 @@ class AwaitedProductsScreen extends StatefulWidget {
 }
 
 class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
-  Future<void> markProductAsReady(String productId, Map<String, dynamic> productData) async {
-    var uniqueId = productData['Unique ID'];
-    var customerSnapshot = await FirebaseFirestore.instance
-        .collection('veritabanideneme')
-        .where('Vergi Kimlik Numarası', isEqualTo: uniqueId)
-        .get();
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
 
-    if (customerSnapshot.docs.isEmpty) {
-      customerSnapshot = await FirebaseFirestore.instance
-          .collection('veritabanideneme')
-          .where('T.C. Kimlik Numarası', isEqualTo: uniqueId)
-          .get();
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
+  }
+
+  Future<void> markProductAsReady(String productId, Map<String, dynamic> productData) async {
+    if (!_isConnected) {
+      _showNoConnectionDialog(
+        'Bağlantı Sorunu',
+        'İnternet bağlantısı yok, işlemi gerçekleştiremiyorsunuz.',
+      );
+      return;
     }
 
-    if (customerSnapshot.docs.isNotEmpty) {
-      var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
-      var customerName = customerData['Açıklama'];
+    try {
+      var uniqueId = productData['Unique ID'];
+      var customerSnapshot = await FirebaseFirestore.instance
+          .collection('veritabanideneme')
+          .where('Vergi Kimlik Numarası', isEqualTo: uniqueId)
+          .get();
 
-      var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
-      var customerDetailsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
-
-      if (customerDetailsSnapshot.docs.isNotEmpty) {
-        var docRef = customerDetailsSnapshot.docs.first.reference;
-        var existingProducts = List<Map<String, dynamic>>.from(customerDetailsSnapshot.docs.first.data()['products'] ?? []);
-
-        var productInfo = {
-          'Kodu': productData['Kodu'],
-          'Detay': productData['Detay'],
-          'Adet': productData['Adet'],
-          'Adet Fiyatı': productData['Adet Fiyatı'],
-          'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
-              (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
-          'Teklif Numarası': productData['Teklif Numarası'],
-          'Teklif Tarihi': productData['Teklif Tarihi'],
-          'Sipariş Numarası': productData['Sipariş Numarası'],
-          'Sipariş Tarihi': productData['Sipariş Tarihi'],
-          'Beklenen Teklif': true,
-          'Ürün Hazır Olma Tarihi': Timestamp.now(),
-          'buttonInfo': 'B.sipariş', // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
-          'Müşteri': customerName // Müşteri unvanını ekliyoruz
-        };
-
-        existingProducts.add(productInfo);
-
-        await docRef.update({
-          'products': existingProducts,
-        });
-
-        // Remove product from pendingProducts collection
-        await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+      if (customerSnapshot.docs.isEmpty) {
+        customerSnapshot = await FirebaseFirestore.instance
+            .collection('veritabanideneme')
+            .where('T.C. Kimlik Numarası', isEqualTo: uniqueId)
+            .get();
       }
+
+      if (customerSnapshot.docs.isNotEmpty) {
+        var customerData = customerSnapshot.docs.first.data() as Map<String, dynamic>;
+        var customerName = customerData['Açıklama'];
+
+        var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
+        var customerDetailsSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
+
+        if (customerDetailsSnapshot.docs.isNotEmpty) {
+          var docRef = customerDetailsSnapshot.docs.first.reference;
+          var existingProducts = List<Map<String, dynamic>>.from(customerDetailsSnapshot.docs.first.data()['products'] ?? []);
+
+          var productInfo = {
+            'Kodu': productData['Kodu'],
+            'Detay': productData['Detay'],
+            'Adet': productData['Adet'],
+            'Adet Fiyatı': productData['Adet Fiyatı'],
+            'Toplam Fiyat': (double.tryParse(productData['Adet']?.toString() ?? '0') ?? 0) *
+                (double.tryParse(productData['Adet Fiyatı']?.toString() ?? '0') ?? 0),
+            'Teklif Numarası': productData['Teklif Numarası'],
+            'Teklif Tarihi': productData['Teklif Tarihi'],
+            'Sipariş Numarası': productData['Sipariş Numarası'],
+            'Sipariş Tarihi': productData['Sipariş Tarihi'],
+            'Beklenen Teklif': true,
+            'Ürün Hazır Olma Tarihi': Timestamp.now(),
+            'buttonInfo': 'B.sipariş', // buttonInfo alanını 'B.sipariş' olarak ayarlıyoruz
+            'Müşteri': customerName // Müşteri unvanını ekliyoruz
+          };
+
+          existingProducts.add(productInfo);
+
+          await docRef.update({
+            'products': existingProducts,
+          });
+
+          // Remove product from pendingProducts collection
+          await FirebaseFirestore.instance.collection('pendingProducts').doc(productId).delete();
+
+          // Başarılı mesajı göstermek için
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ürün başarıyla işaretlendi.')),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Müşteri detayları bulunamadı.')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Müşteri bulunamadı.')),
+        );
+      }
+    } catch (e) {
+      print('Ürün işaretlenirken hata oluştu: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ürün işaretlenirken hata oluştu.')),
+      );
     }
   }
 
@@ -131,12 +223,19 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                           Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
                           Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
                           Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
-                          Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
+                          Text('İşleme Alan: ${data['islemeAlan'] ?? 'admin'}'),
                         ],
                       ),
                       trailing: ElevatedButton(
                         onPressed: () {
-                          markProductAsReady(docs[index].id, data);
+                          if (_isConnected) {
+                            markProductAsReady(docs[index].id, data);
+                          } else {
+                            _showNoConnectionDialog(
+                              'Bağlantı Sorunu',
+                              'İnternet bağlantısı yok, işlemi gerçekleştiremiyorsunuz.',
+                            );
+                          }
                         },
                         child: Text('Ürün Hazır'),
                       ),

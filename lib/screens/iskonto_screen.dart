@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'custom_drawer.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_app_bar.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class IskontoScreen extends StatefulWidget {
   @override
@@ -27,12 +29,70 @@ class _IskontoScreenState extends State<IskontoScreen> {
   Map<String, String> customerDiscounts = {};
   TextEditingController searchController = TextEditingController();
 
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchUniqueBrands();
     fetchIskontoData();
     fetchCustomers();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose(); // Doğru isimlendirme
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
   }
 
   Future<void> fetchUniqueBrands() async {
@@ -84,6 +144,14 @@ class _IskontoScreenState extends State<IskontoScreen> {
   }
 
   Future<void> saveIskonto() async {
+    if (!_isConnected) {
+      _showNoConnectionDialog(
+        'Bağlantı Sorunu',
+        'İnternet bağlantısı yok, iskonto kaydetme işlemi gerçekleştirilemiyor.',
+      );
+      return;
+    }
+
     var batch = FirebaseFirestore.instance.batch();
     var iskontoCollection = FirebaseFirestore.instance.collection('iskonto');
 
@@ -98,34 +166,60 @@ class _IskontoScreenState extends State<IskontoScreen> {
       });
     });
 
-    await batch.commit();
+    try {
+      await batch.commit();
 
-    setState(() {
-      isEditable = false;
-    });
+      setState(() {
+        isEditable = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('İskonto verileri başarıyla kaydedildi.')),
+      );
+    } catch (e) {
+      print('İskonto kaydedilirken hata oluştu: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('İskonto kaydedilirken hata oluştu.')),
+      );
+    }
   }
 
   Future<void> saveCustomerDiscounts(String customerId, String description) async {
+    if (!_isConnected) {
+      _showNoConnectionDialog(
+        'Bağlantı Sorunu',
+        'İnternet bağlantısı yok, iskonto kaydetme işlemi gerçekleştirilemiyor.',
+      );
+      return;
+    }
+
     var customerCollection = FirebaseFirestore.instance.collection('veritabanideneme');
     var selectedDiscount = customerDiscounts[description];
 
-    // Belge mevcut değilse, oluştur
-    var querySnapshot = await customerCollection.where('Açıklama', isEqualTo: description).get();
-    if (querySnapshot.docs.isNotEmpty) {
-      var docRef = querySnapshot.docs.first.reference;
-      await docRef.update({
-        'iskonto': selectedDiscount
-      });
-    } else {
-      await customerCollection.add({
-        'Açıklama': description,
-        'iskonto': selectedDiscount
-      });
-    }
+    try {
+      // Belge mevcut değilse, oluştur
+      var querySnapshot = await customerCollection.where('Açıklama', isEqualTo: description).get();
+      if (querySnapshot.docs.isNotEmpty) {
+        var docRef = querySnapshot.docs.first.reference;
+        await docRef.update({
+          'iskonto': selectedDiscount
+        });
+      } else {
+        await customerCollection.add({
+          'Açıklama': description,
+          'iskonto': selectedDiscount
+        });
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('İskonto kaydedildi')),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('İskonto kaydedildi')),
+      );
+    } catch (e) {
+      print('İskonto kaydedilirken hata oluştu: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('İskonto kaydedilirken hata oluştu.')),
+      );
+    }
   }
 
   Future<void> deleteLevel(String level) async {
@@ -179,23 +273,30 @@ class _IskontoScreenState extends State<IskontoScreen> {
       );
 
       if (finalConfirmed) {
-        await FirebaseFirestore.instance.collection('iskonto').get().then((querySnapshot) {
-          querySnapshot.docs.forEach((doc) {
-            if (doc.data().containsKey(level)) {
-              FirebaseFirestore.instance.collection('iskonto').doc(doc.id).update({level: FieldValue.delete()});
-            }
+        try {
+          await FirebaseFirestore.instance.collection('iskonto').get().then((querySnapshot) {
+            querySnapshot.docs.forEach((doc) {
+              if (doc.data().containsKey(level)) {
+                FirebaseFirestore.instance.collection('iskonto').doc(doc.id).update({level: FieldValue.delete()});
+              }
+            });
           });
-        });
 
-        setState(() {
-          customLevels.remove(level);
-          customIskonto.remove(level);
-          customIsExpanded.remove(level);
-        });
+          setState(() {
+            customLevels.remove(level);
+            customIskonto.remove(level);
+            customIsExpanded.remove(level);
+          });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$level seviyesi kaldırıldı')),
-        );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$level seviyesi kaldırıldı')),
+          );
+        } catch (e) {
+          print('Seviye kaldırılırken hata oluştu: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Seviye kaldırılırken hata oluştu.')),
+          );
+        }
       }
     }
   }
@@ -361,9 +462,16 @@ class _IskontoScreenState extends State<IskontoScreen> {
                 value: discount.isEmpty ? null : discount,
                 hint: Text('Seviye Seçin'),
                 onChanged: (String? newValue) {
-                  setState(() {
-                    customerDiscounts[description] = newValue ?? '';
-                  });
+                  if (_isConnected) {  // İnternet bağlantısı kontrolü
+                    setState(() {
+                      customerDiscounts[description] = newValue ?? '';
+                    });
+                  } else {
+                    _showNoConnectionDialog(
+                      'Bağlantı Sorunu',
+                      'İnternet bağlantısı yok, seviye seçimi yapılamaz.',
+                    );
+                  }
                 },
                 items: ['A Seviye', 'B Seviye', 'C Seviye', ...customLevels].map((String level) {
                   return DropdownMenuItem<String>(
@@ -372,11 +480,21 @@ class _IskontoScreenState extends State<IskontoScreen> {
                   );
                 }).toList(),
               ),
+
             ),
             Expanded(
               flex: 1,
               child: ElevatedButton(
-                onPressed: () => saveCustomerDiscounts(customerId, description),
+                onPressed: () {
+                  if (_isConnected) {
+                    saveCustomerDiscounts(customerId, description);
+                  } else {
+                    _showNoConnectionDialog(
+                      'Bağlantı Sorunu',
+                      'İnternet bağlantısı yok, kaydetme işlemi gerçekleştirilemiyor.',
+                    );
+                  }
+                },
                 child: Text('Kaydet'),
               ),
             ),
@@ -439,8 +557,9 @@ class _IskontoScreenState extends State<IskontoScreen> {
                           if (index == 0) isASeviyeOpen = !isASeviyeOpen;
                           if (index == 1) isBSeviyeOpen = !isBSeviyeOpen;
                           if (index == 2) isCSeviyeOpen = !isCSeviyeOpen;
-                          if (index >= 3) customIsExpanded[customLevels[index - 3]] =
-                          !customIsExpanded[customLevels[index - 3]]!;
+                          if (index >= 3)
+                            customIsExpanded[customLevels[index - 3]] =
+                            !customIsExpanded[customLevels[index - 3]]!;
                         });
                       },
                       children: [
@@ -487,7 +606,8 @@ class _IskontoScreenState extends State<IskontoScreen> {
                                 ),
                               );
                             },
-                            body: buildIskontoList(customIskonto[customLevel]!, customLevel, isCustom: true, level: customLevel),
+                            body: buildIskontoList(customIskonto[customLevel]!, customLevel,
+                                isCustom: true, level: customLevel),
                             isExpanded: customIsExpanded[customLevel] ?? false,
                           ),
                       ],
@@ -497,19 +617,46 @@ class _IskontoScreenState extends State<IskontoScreen> {
                       Column(
                         children: [
                           ElevatedButton(
-                            onPressed: saveIskonto,
+                            onPressed: () {
+                              if (_isConnected) {
+                                saveIskonto();
+                              } else {
+                                _showNoConnectionDialog(
+                                  'Bağlantı Sorunu',
+                                  'İnternet bağlantısı yok, iskonto kaydetme işlemi gerçekleştirilemiyor.',
+                                );
+                              }
+                            },
                             child: Text('Kaydet'),
                           ),
                           SizedBox(height: 10),
                           ElevatedButton(
-                            onPressed: addNewLevel,
+                            onPressed: () {
+                              if (_isConnected) {
+                                addNewLevel();
+                              } else {
+                                _showNoConnectionDialog(
+                                  'Bağlantı Sorunu',
+                                  'İnternet bağlantısı yok, seviye ekleme işlemi gerçekleştirilemiyor.',
+                                );
+                              }
+                            },
                             child: Text('Seviye Ekle'),
                           ),
                         ],
                       ),
                     if (!isEditable)
                       ElevatedButton(
-                        onPressed: enableEditing,
+                        onPressed: () {
+                          if (_isConnected) {
+                            enableEditing();
+                          } else {
+                            _showNoConnectionDialog(
+                              'Bağlantı Sorunu',
+                              'İnternet bağlantısı yok, düzenleme işlemi gerçekleştirilemiyor.',
+                            );
+                          }
+                        },
                         child: Text('Düzenle'),
                       ),
                     if (isEditable && isDeleting)
@@ -532,6 +679,70 @@ class _IskontoScreenState extends State<IskontoScreen> {
         ),
       ),
       bottomNavigationBar: CustomBottomBar(),
+    );
+  }
+}
+
+class FilterChipWidget extends StatefulWidget {
+  final List<String> filterList;
+  final String filterType;
+  final ValueChanged<List<String>> onSelectionChanged;
+
+  FilterChipWidget({required this.filterList, required this.filterType, required this.onSelectionChanged});
+
+  @override
+  _FilterChipWidgetState createState() => _FilterChipWidgetState();
+}
+
+class _FilterChipWidgetState extends State<FilterChipWidget> {
+  List<String> selectedFilters = [];
+
+  @override
+  void initState() {
+    super.initState();
+    selectedFilters = widget.filterList;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('urunler').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return CircularProgressIndicator();
+        }
+
+        List<String> filters = [];
+        snapshot.data!.docs.forEach((doc) {
+          var data = doc.data() as Map<String, dynamic>;
+          String value = data[widget.filterType] ?? '';
+          if (!filters.contains(value) && value.isNotEmpty) {
+            filters.add(value);
+          }
+        });
+
+        return Wrap(
+          spacing: 8.0,
+          children: filters.map((filter) {
+            return FilterChip(
+              label: Text(filter),
+              selected: selectedFilters.contains(filter),
+              onSelected: (bool selected) {
+                setState(() {
+                  if (selected) {
+                    selectedFilters.add(filter);
+                  } else {
+                    selectedFilters.removeWhere((String name) {
+                      return name == filter;
+                    });
+                  }
+                });
+                widget.onSelectionChanged(selectedFilters);
+              },
+            );
+          }).toList(),
+        );
+      },
     );
   }
 }

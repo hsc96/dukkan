@@ -5,6 +5,8 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'firestore_service.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ZamGuncelleScreen extends StatefulWidget {
   @override
@@ -21,11 +23,69 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
   bool isAscending = true;
   String sortColumn = 'tarih';
 
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchUniqueBrands();
     fetchZamListesi();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    zamOraniController.dispose(); // TextEditingController'ı serbest bırak
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
   }
 
   Future<void> fetchUniqueBrands() async {
@@ -66,6 +126,11 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
     double zamOrani = double.tryParse(zamOraniController.text) ?? 0.0;
     if (selectedBrands.isNotEmpty) {
       _showConfirmationDialog(zamOrani);
+    } else {
+      _showNoConnectionDialog(
+        'Seçim Hatası',
+        'Lütfen en az bir marka seçiniz.',
+      );
     }
   }
 
@@ -215,9 +280,19 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
                 child: Column(
                   children: [
                     ElevatedButton(
-                      onPressed: selectAllKSTSBrands,
+                      onPressed: () {
+                        if (_isConnected) {
+                          selectAllKSTSBrands();
+                        } else {
+                          _showNoConnectionDialog(
+                            'Bağlantı Sorunu',
+                            'İnternet bağlantısı yok, KSTS tüm ürünler seçilemez.',
+                          );
+                        }
+                      },
                       child: Text('KSTS Tüm Ürünler'),
                     ),
+
                     Expanded(
                       child: ListView(
                         children: brands.map((String value) {
@@ -225,13 +300,20 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
                             title: Text(value),
                             value: selectedBrands.contains(value),
                             onChanged: (bool? checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  selectedBrands.add(value);
-                                } else {
-                                  selectedBrands.remove(value);
-                                }
-                              });
+                              if (_isConnected) { // İnternet bağlantısı kontrolü
+                                setState(() {
+                                  if (checked == true) {
+                                    selectedBrands.add(value);
+                                  } else {
+                                    selectedBrands.remove(value);
+                                  }
+                                });
+                              } else {
+                                _showNoConnectionDialog(
+                                  'Bağlantı Sorunu',
+                                  'İnternet bağlantısı yok, marka seçimi yapılamaz.',
+                                );
+                              }
                             },
                           );
                         }).toList(),
@@ -251,7 +333,16 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
             ),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: updatePrices,
+              onPressed: () {
+                if (_isConnected) {
+                  updatePrices();
+                } else {
+                  _showNoConnectionDialog(
+                    'Bağlantı Sorunu',
+                    'İnternet bağlantısı yok, fiyat güncelleme işlemi gerçekleştirilemiyor.',
+                  );
+                }
+              },
               child: Text('Fiyatları Güncelle'),
             ),
             SizedBox(height: 20),
@@ -310,5 +401,49 @@ class _ZamGuncelleScreenState extends State<ZamGuncelleScreen> {
       ),
       bottomNavigationBar: CustomBottomBar(),
     );
+  }
+}
+
+class FirestoreService {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  Future<List<String>> fetchUniqueBrands() async {
+    QuerySnapshot snapshot = await _db.collection('urunler').get();
+    Set<String> brandSet = {};
+    snapshot.docs.forEach((doc) {
+      var data = doc.data() as Map<String, dynamic>;
+      if (data.containsKey('Marka')) {
+        brandSet.add(data['Marka'] as String);
+      }
+    });
+    return brandSet.toList();
+  }
+
+  Future<List<Map<String, dynamic>>?> fetchZamListesi() async {
+    QuerySnapshot snapshot = await _db.collection('zamlar').orderBy('tarih', descending: true).get();
+    if (snapshot.docs.isEmpty) return null;
+    return snapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+  }
+
+  Future<void> updateProductPricesByBrands(List<String> brands, double zamOrani) async {
+    WriteBatch batch = _db.batch();
+    QuerySnapshot snapshot = await _db.collection('urunler').where('Marka', whereIn: brands).get();
+
+    snapshot.docs.forEach((doc) {
+      double currentPrice = (doc['Fiyat'] as num).toDouble();
+      double newPrice = currentPrice + (currentPrice * (zamOrani / 100));
+      batch.update(doc.reference, {'Fiyat': newPrice});
+    });
+
+    await batch.commit();
+  }
+
+  Future<void> addZamToCollection(String markalar, String tarih, String yetkili, double zamOrani) async {
+    await _db.collection('zamlar').add({
+      'markalar': markalar,
+      'tarih': tarih,
+      'yetkili': yetkili,
+      'zam orani': zamOrani,
+    });
   }
 }

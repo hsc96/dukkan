@@ -8,6 +8,8 @@ import 'pdf_template.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'dart:io';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart'; // 1. Gerekli import
 
 class KitsWidget extends StatefulWidget {
   final String customerName;
@@ -28,11 +30,68 @@ class _KitsWidgetState extends State<KitsWidget> {
   String euroKur = '';
   final FirestoreService firestoreService = FirestoreService();
 
+  // 2. İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchKits();
     initializeDovizKur();
+    _checkInitialConnectivity(); // 3. Mevcut bağlantı durumunu kontrol et
+
+    // 4. İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // 3. Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // 5. Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // 6. Aboneliği iptal et
+    super.dispose();
   }
 
   Future<void> initializeDovizKur() async {
@@ -44,6 +103,7 @@ class _KitsWidgetState extends State<KitsWidget> {
       euroKur = kurlar['euro']!;
     });
   }
+
   Future<void> fetchDovizKur() async {
     DovizService dovizService = DovizService();
     try {
@@ -318,7 +378,6 @@ class _KitsWidgetState extends State<KitsWidget> {
       var discountData = await firestoreService.getDiscountRates(discountLevel, brand);
       double discountRate = discountData['rate'] ?? 0.0;
       double discountedPrice = priceInTl * (1 - (discountRate / 100));
-
       productData['İskonto'] = '%${discountRate.toStringAsFixed(2)}';
       productData['Adet Fiyatı'] = discountedPrice.toStringAsFixed(2);
       productData['Toplam Fiyat'] = (discountedPrice * (double.tryParse(productData['Adet']?.toString() ?? '1') ?? 1)).toStringAsFixed(2);
@@ -404,7 +463,6 @@ class _KitsWidgetState extends State<KitsWidget> {
     await OpenFile.open(file.path);
   }
 
-
   Future<void> generateSubKitPDF(int kitIndex, int subKitIndex) async {
     var kit = mainKits[kitIndex];
     var subKit = kit['subKits'][subKitIndex];
@@ -474,9 +532,6 @@ class _KitsWidgetState extends State<KitsWidget> {
     await file.writeAsBytes(await pdf.save());
     await OpenFile.open(file.path);
   }
-
-
-
 
   Future<void> processKit(int kitIndex, {int? subKitIndex}) async {
     List<Map<String, dynamic>> productsToProcess = [];
@@ -577,16 +632,6 @@ class _KitsWidgetState extends State<KitsWidget> {
     );
   }
 
-
-
-
-
-
-
-
-
-
-
   Widget buildKitsList() {
     return ListView.builder(
       shrinkWrap: true,
@@ -630,7 +675,13 @@ class _KitsWidgetState extends State<KitsWidget> {
                       Expanded(
                         child: ListTile(
                           title: ElevatedButton(
-                            onPressed: () => processKit(index, subKitIndex: subKitIndex),
+                            onPressed: () {
+                              if (_isConnected) {
+                                processKit(index, subKitIndex: subKitIndex);
+                              } else {
+                                _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, işlemi gerçekleştiremiyorsunuz.');
+                              }
+                            },
                             child: Text('İşleme Al'),
                           ),
                         ),
@@ -653,7 +704,13 @@ class _KitsWidgetState extends State<KitsWidget> {
                 Expanded(
                   child: ListTile(
                     title: ElevatedButton(
-                      onPressed: () => processKit(index),
+                      onPressed: () {
+                        if (_isConnected) {
+                          processKit(index);
+                        } else {
+                          _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, işlemi gerçekleştiremiyorsunuz.');
+                        }
+                      },
                       child: Text('İşleme Al'),
                     ),
                   ),
@@ -673,7 +730,6 @@ class _KitsWidgetState extends State<KitsWidget> {
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {

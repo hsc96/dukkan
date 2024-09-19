@@ -8,6 +8,8 @@ import 'pdf_template.dart';
 import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart'; // 1. Gerekli import
 
 class QuotesScreen extends StatefulWidget {
   @override
@@ -25,13 +27,70 @@ class _QuotesScreenState extends State<QuotesScreen> {
   User? currentUser;
   String? fullName;
 
+  // 2. İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchQuotes();
     fetchCurrentUser();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
   }
 
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // 5. Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    orderNumberController.dispose();
+    super.dispose();
+  }
 
   Future<void> fetchCurrentUser() async {
     currentUser = _auth.currentUser;
@@ -130,6 +189,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
+
   void convertQuoteToOrder(Map<String, dynamic> quote) {
     if (selectedProductIndexes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -181,6 +241,7 @@ class _QuotesScreenState extends State<QuotesScreen> {
           onSave: (updatedProducts) {
             finalizeOrderConversion(quote, updatedProducts, orderNumberController.text);
           },
+          selectedProductIndexes: selectedProductIndexes,
         );
       },
     );
@@ -216,11 +277,11 @@ class _QuotesScreenState extends State<QuotesScreen> {
 
     try {
       var customerProductsCollection = FirebaseFirestore.instance.collection('customerDetails');
-      var customerSnapshot = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
+      var customerSnapshotDetails = await customerProductsCollection.where('customerName', isEqualTo: customerName).get();
       var existingProducts = <Map<String, dynamic>>[];
 
-      if (customerSnapshot.docs.isNotEmpty) {
-        existingProducts = List<Map<String, dynamic>>.from(customerSnapshot.docs.first.data()['products'] ?? []);
+      if (customerSnapshotDetails.docs.isNotEmpty) {
+        existingProducts = List<Map<String, dynamic>>.from(customerSnapshotDetails.docs.first.data()['products'] ?? []);
       }
 
       for (var i = 0; i < updatedProducts.length; i++) {
@@ -259,8 +320,8 @@ class _QuotesScreenState extends State<QuotesScreen> {
         }
       }
 
-      if (customerSnapshot.docs.isNotEmpty) {
-        var docRef = customerSnapshot.docs.first.reference;
+      if (customerSnapshotDetails.docs.isNotEmpty) {
+        var docRef = customerSnapshotDetails.docs.first.reference;
         await docRef.update({'products': existingProducts});
       } else {
         await customerProductsCollection.add({
@@ -414,13 +475,27 @@ class _QuotesScreenState extends State<QuotesScreen> {
                       children: [
                         TextButton(
                           onPressed: () {
-                            saveQuoteAsPDF(quote);
+                            if (_isConnected) {
+                              saveQuoteAsPDF(quote);
+                            } else {
+                              _showNoConnectionDialog(
+                                'Bağlantı Sorunu',
+                                'İnternet bağlantısı yok, PDF\'e dönüştürme işlemi gerçekleştirilemiyor.',
+                              );
+                            }
                           },
                           child: Text('PDF\'ye Dönüştür'),
                         ),
                         TextButton(
                           onPressed: () {
-                            convertQuoteToOrder(quote);
+                            if (_isConnected) {
+                              convertQuoteToOrder(quote);
+                            } else {
+                              _showNoConnectionDialog(
+                                'Bağlantı Sorunu',
+                                'İnternet bağlantısı yok, siparişe dönüştürme işlemi gerçekleştirilemiyor.',
+                              );
+                            }
                           },
                           child: Text('Siparişe Dönüştür'),
                         ),
@@ -451,8 +526,9 @@ class _QuotesScreenState extends State<QuotesScreen> {
 class DeliveryDateForm extends StatefulWidget {
   final List<Map<String, dynamic>> quoteProducts;
   final Function(List<Map<String, dynamic>>) onSave;
+  final Set<int> selectedProductIndexes;
 
-  DeliveryDateForm({required this.quoteProducts, required this.onSave});
+  DeliveryDateForm({required this.quoteProducts, required this.onSave, required this.selectedProductIndexes});
 
   @override
   _DeliveryDateFormState createState() => _DeliveryDateFormState();
@@ -464,7 +540,10 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
   @override
   void initState() {
     super.initState();
-    updatedProducts = widget.quoteProducts;
+    updatedProducts = widget.quoteProducts.where((product) {
+      int productIndex = widget.quoteProducts.indexOf(product);
+      return widget.selectedProductIndexes.contains(productIndex);
+    }).toList();
   }
 
   @override

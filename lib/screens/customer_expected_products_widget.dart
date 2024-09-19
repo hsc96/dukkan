@@ -1,16 +1,85 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
-class CustomerExpectedProductsWidget extends StatelessWidget {
+class CustomerExpectedProductsWidget extends StatefulWidget {
   final String customerName;
 
   CustomerExpectedProductsWidget({required this.customerName});
 
+  @override
+  _CustomerExpectedProductsWidgetState createState() => _CustomerExpectedProductsWidgetState();
+}
+
+class _CustomerExpectedProductsWidgetState extends State<CustomerExpectedProductsWidget> {
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
+  }
+
   Future<String?> getCustomerUniqueId() async {
     var customerSnapshot = await FirebaseFirestore.instance
         .collection('veritabanideneme')
-        .where('Açıklama', isEqualTo: customerName)
+        .where('Açıklama', isEqualTo: widget.customerName)
         .get();
 
     if (customerSnapshot.docs.isEmpty) {
@@ -75,17 +144,19 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String?>(
       future: getCustomerUniqueId(),
       builder: (context, uniqueIdSnapshot) {
         if (uniqueIdSnapshot.connectionState == ConnectionState.waiting) {
-          return CircularProgressIndicator();
+          return Center(child: CircularProgressIndicator());
         }
-        if (uniqueIdSnapshot.hasError || !uniqueIdSnapshot.hasData) {
+        if (uniqueIdSnapshot.hasError) {
           return Text('Hata: ${uniqueIdSnapshot.error}');
+        }
+        if (!uniqueIdSnapshot.hasData || uniqueIdSnapshot.data == null) {
+          return Text('Müşteri bulunamadı');
         }
 
         return FutureBuilder<QuerySnapshot>(
@@ -95,7 +166,7 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
               .get(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return CircularProgressIndicator();
+              return Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
               return Text('Hata: ${snapshot.error}');
@@ -153,12 +224,19 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
                             Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
                             Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
                             Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
-                            Text('İşleme Alan: ${data['İşleme Alan'] ?? 'admin'}'),
+                            Text('İşleme Alan: ${data['islemeAlan'] ?? 'admin'}'),
                           ],
                         ),
                         trailing: ElevatedButton(
                           onPressed: () {
-                            markProductAsReady(docs[index].id, data);
+                            if (_isConnected) {
+                              markProductAsReady(docs[index].id, data);
+                            } else {
+                              _showNoConnectionDialog(
+                                'Bağlantı Sorunu',
+                                'İnternet bağlantısı yok, işlemi gerçekleştiremiyorsunuz.',
+                              );
+                            }
                           },
                           child: Text('Ürün Hazır'),
                         ),
@@ -174,5 +252,3 @@ class CustomerExpectedProductsWidget extends StatelessWidget {
     );
   }
 }
-
-

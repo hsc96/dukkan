@@ -9,7 +9,8 @@ import 'quotes_widget.dart';
 import 'processed_screen.dart';
 import 'customer_expected_products_widget.dart';
 import 'package:intl/intl.dart';  // Tarih formatlama için gerekli
-import 'products_widget.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:async'; // Asenkron işlemler için gerekli
 
 class CariHesapTakipScreen extends StatefulWidget {
   final String customerName;
@@ -25,16 +26,74 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
   int currentIndex = 5; // Varsayılan olarak Cari Hesap Takip seçili olacak
   double genelToplam = 0.0;
 
+  // Ürünler ve işlemler için ayrı listeler
+  List<Map<String, dynamic>> products = [];
+  List<Map<String, dynamic>> transactions = [];
+
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchCariHesaplar();
-    if (widget.products.isNotEmpty) {
-      calculateGenelToplam();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
     }
   }
 
-  void fetchCariHesaplar() async {
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
+  }
+
+  Future<void> fetchCariHesaplar() async {
     var querySnapshot = await FirebaseFirestore.instance
         .collection('cariHesaplar')
         .where('customerName', isEqualTo: widget.customerName)
@@ -43,17 +102,26 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
 
     if (querySnapshot.docs.isNotEmpty) {
       setState(() {
-        widget.products.clear(); // Mevcut ürünleri temizle
-        // Products ve transactions alanlarını birleştir
         var data = querySnapshot.docs.first.data();
-        widget.products.addAll(List<Map<String, dynamic>>.from(data['products'] ?? []));
-
-        List<Map<String, dynamic>> transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
-        widget.products.addAll(transactions);
-
+        products = List<Map<String, dynamic>>.from(data['products'] ?? []);
+        transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
         calculateGenelToplam(); // Genel toplamı hesapla
       });
     }
+  }
+
+  void calculateGenelToplam() {
+    double totalProducts = products.fold(0.0, (sum, item) {
+      return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+    });
+
+    double totalTransactions = transactions.fold(0.0, (sum, item) {
+      return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+    });
+
+    setState(() {
+      genelToplam = totalProducts + totalTransactions;
+    });
   }
 
   void addProduct(Map<String, dynamic> newProduct) async {
@@ -86,14 +154,17 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     }
   }
 
+  void calculateGenelToplamUpdated() {
+    double totalProducts = products.fold(0.0, (sum, item) {
+      return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+    });
 
-  void calculateGenelToplam() {
-    double total = widget.products.fold(0.0, (sum, item) {
+    double totalTransactions = transactions.fold(0.0, (sum, item) {
       return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
     });
 
     setState(() {
-      genelToplam = total;
+      genelToplam = totalProducts + totalTransactions;
     });
   }
 
@@ -127,7 +198,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       genelToplam -= amount;
 
       // Ödeme eklerken tarih/saat bilgisini de ekleyelim
-      widget.products.add({
+      transactions.add({
         'Kodu': '',
         'Detay': 'Ödeme Eklendi',
         'Adet': '',
@@ -173,8 +244,9 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       });
     }
   }
-// Cari hesap takip widget'ında bilgi butonlarını oluşturacağız
-  Widget buildInfoButtonForAccount(Map<String, dynamic> product) {
+
+  // Cari hesap takip widget'ında bilgi butonlarını oluşturacağız
+  Widget buildInfoButton(Map<String, dynamic> product) {
     bool hasQuoteInfo = product['buttonInfo'] == 'Teklif';
     bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
@@ -183,6 +255,30 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
 
     return Column(
       children: [
+        if (hasQuoteInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForQuote(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: Text('Teklif'),
+          ),
+        if (hasKitInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForKit(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: Text('Kit'),
+          ),
+        if (hasSalesInfo)
+          ElevatedButton(
+            onPressed: () => showInfoDialogForSales(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
+            child: Text('Satış'),
+          ),
+        if (hasExpectedInfo)
+          ElevatedButton(
+            onPressed: () => showExpectedQuoteInfoDialog(product),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
+            child: Text('B.sipariş'),
+          ),
         if (hasAdetOrFiyatInfo)
           ElevatedButton(
             onPressed: () => showInfoDialogForChanges(product), // Değişiklik dialogu için fonksiyon
@@ -193,7 +289,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     );
   }
 
-// Değişiklikleri gösterecek olan dialog fonksiyonu
+  // Değişiklikleri gösterecek olan dialog fonksiyonu
   void showInfoDialogForChanges(Map<String, dynamic> product) {
     showDialog(
       context: context,
@@ -313,7 +409,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
               Text('Ana Kit Adı: ${product['Ana Kit Adı'] ?? 'N/A'}'),
               Text('Alt Kit Adı: ${product['Alt Kit Adı'] ?? 'N/A'}'),
               Text('Oluşturan Kişi: ${product['Oluşturan Kişi'] ?? 'Admin'}'),
-              Text('İşleme Alma Tarihi: ${product['işleme Alma Tarihi'] != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(product['işleme Alma Tarihi'].toDate()) : 'N/A'}'),
+              Text('İşleme Alma Tarihi: ${product['işleme Alma Tarihi'] != null ? DateFormat('dd MMMM yyyy, HH:mm').format(product['işleme Alma Tarihi'].toDate()) : 'N/A'}'),
             ],
           ),
           actions: [
@@ -328,7 +424,6 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       },
     );
   }
-
 
   void showInfoDialogForSales(Map<String, dynamic> product) {
     showDialog(
@@ -359,7 +454,6 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     );
   }
 
-
   void showExpectedQuoteInfoDialog(Map<String, dynamic> product) {
     DateTime? readyDate;
     if (product['Ürün Hazır Olma Tarihi'] != null) {
@@ -379,7 +473,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
               Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}'),
               Text('Teklif Tarihi: ${product['Teklif Tarihi'] ?? 'N/A'}'),
               Text('Sipariş Tarihi: ${product['Sipariş Tarihi'] ?? 'N/A'}'),
-              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate) : 'N/A'}'),
+              Text('Ürün Hazır Olma Tarihi: ${readyDate != null ? DateFormat('dd MMMM yyyy, HH:mm').format(readyDate) : 'N/A'}'),
             ],
           ),
           actions: [
@@ -392,45 +486,6 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
           ],
         );
       },
-    );
-  }
-
-
-
-
-  Widget buildInfoButton(Map<String, dynamic> product) {
-    bool hasQuoteInfo = product['buttonInfo'] == 'Teklif';
-    bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
-    bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
-    bool hasExpectedInfo = product['buttonInfo'] == 'B.sipariş';
-
-    return Column(
-      children: [
-        if (hasQuoteInfo)
-          ElevatedButton(
-            onPressed: () => showInfoDialogForQuote(product),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-            child: Text('Teklif'),
-          ),
-        if (hasKitInfo)
-          ElevatedButton(
-            onPressed: () => showInfoDialogForKit(product),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: Text('Kit'),
-          ),
-        if (hasSalesInfo)
-          ElevatedButton(
-            onPressed: () => showInfoDialogForSales(product),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-            child: Text('Satış'),
-          ),
-        if (hasExpectedInfo)
-          ElevatedButton(
-            onPressed: () => showExpectedQuoteInfoDialog(product),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.deepOrange),
-            child: Text('B.sipariş'),
-          ),
-      ],
     );
   }
 
@@ -471,10 +526,10 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       var querySnapshot = await customerRef.get();
       if (querySnapshot.docs.isNotEmpty) {
         var docRef = querySnapshot.docs.first.reference;
-        widget.products.removeAt(index); // Ürünü listeden sil
+        products.removeAt(index); // Ürünü listeden sil
 
         await docRef.update({
-          'products': widget.products,
+          'products': products,
         }).then((_) {
           fetchCariHesaplar(); // Verileri yeniden yükle
         }).catchError((error) {
@@ -488,8 +543,9 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     TextEditingController quantityController = TextEditingController();
     TextEditingController priceController = TextEditingController();
 
-    quantityController.text = widget.products[index]['Adet']?.toString() ?? '';
-    priceController.text = widget.products[index]['Adet Fiyatı']?.toString() ?? '';
+    // Ürünün mevcut değerlerini al
+    quantityController.text = products[index]['Adet']?.toString() ?? '';
+    priceController.text = products[index]['Adet Fiyatı']?.toString() ?? '';
 
     showDialog(
       context: context,
@@ -514,51 +570,64 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.of(context).pop();
+                Navigator.of(context).pop(); // Dialog'u kapat
               },
               child: Text('İptal'),
             ),
             TextButton(
               onPressed: () async {
-                setState(() {
-                  // Eski adet ve fiyat bilgilerini kaydet
-                  widget.products[index]['Eski Adet'] = widget.products[index]['Adet'];
-                  widget.products[index]['Eski Fiyat'] = widget.products[index]['Adet Fiyatı'];
-                  widget.products[index]['Değiştiren'] = 'Admin'; // Kullanıcı bilgisi
-                  widget.products[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now());
+                if (_isConnected) { // İnternet bağlantısı kontrolü
+                  // Eski değerleri bul
+                  double eskiAdet = double.tryParse(products[index]['Adet']?.toString() ?? '1') ?? 1;
+                  double eskiFiyat = double.tryParse(products[index]['Adet Fiyatı']?.toString() ?? '0.0') ?? 0.0;
+                  double eskiToplam = eskiAdet * eskiFiyat;
 
-                  // Yeni adet ve fiyat bilgilerini güncelle
-                  widget.products[index]['Adet'] = quantityController.text;
-                  widget.products[index]['Adet Fiyatı'] = priceController.text;
+                  // Yeni değerleri al
+                  double yeniAdet = double.tryParse(quantityController.text) ?? eskiAdet;
+                  double yeniFiyat = double.tryParse(priceController.text) ?? eskiFiyat;
+                  double yeniToplam = yeniAdet * yeniFiyat;
 
-                  // Yeni toplam fiyatı hesapla
-                  double adet = double.tryParse(quantityController.text) ?? 1;
-                  double fiyat = double.tryParse(priceController.text) ?? 0;
-                  widget.products[index]['Toplam Fiyat'] = (adet * fiyat).toStringAsFixed(2);
-                });
+                  setState(() {
+                    // Eski değerleri kaydet
+                    products[index]['Eski Adet'] = eskiAdet.toString();
+                    products[index]['Eski Fiyat'] = eskiFiyat.toString();
+                    products[index]['Değiştiren'] = 'Admin'; // Kullanıcı bilgisi
+                    products[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now());
 
-                // Firestore'da güncelle
-                var customerRef = FirebaseFirestore.instance
-                    .collection('cariHesaplar')
-                    .where('customerName', isEqualTo: widget.customerName)
-                    .limit(1);
-
-                var querySnapshot = await customerRef.get();
-                if (querySnapshot.docs.isNotEmpty) {
-                  var docRef = querySnapshot.docs.first.reference;
-                  await docRef.update({
-                    'products': widget.products,
-                  }).then((_) {
-                    // Tablodaki toplam ve verileri güncelle
-                    fetchCariHesaplar();
-                    // Genel toplamı yeniden hesapla
-                    calculateGenelToplam();
-                  }).catchError((error) {
-                    print('Ürün güncellenirken hata oluştu: $error');
+                    // Yeni değerleri güncelle
+                    products[index]['Adet'] = yeniAdet.toString();
+                    products[index]['Adet Fiyatı'] = yeniFiyat.toString();
+                    products[index]['Toplam Fiyat'] = yeniToplam.toStringAsFixed(2);
                   });
-                }
 
-                Navigator.of(context).pop(); // Dialog'u kapat
+                  // Firestore'da güncelle
+                  var customerRef = FirebaseFirestore.instance
+                      .collection('cariHesaplar')
+                      .where('customerName', isEqualTo: widget.customerName)
+                      .limit(1);
+
+                  var querySnapshot = await customerRef.get();
+                  if (querySnapshot.docs.isNotEmpty) {
+                    var docRef = querySnapshot.docs.first.reference;
+                    await docRef.update({
+                      'products': products,
+                    }).then((_) {
+                      // Tablodaki toplam ve verileri güncelle
+                      fetchCariHesaplar();
+                      // Genel toplamı yeniden hesapla
+                      calculateGenelToplam();
+                    }).catchError((error) {
+                      print('Ürün güncellenirken hata oluştu: $error');
+                    });
+                  }
+
+                  Navigator.of(context).pop(); // Dialog'u kapat
+                } else {
+                  _showNoConnectionDialog(
+                    'Bağlantı Sorunu',
+                    'İnternet bağlantısı yok, ürün düzenleme işlemi gerçekleştirilemiyor.',
+                  );
+                }
               },
               child: Text('Kaydet'),
             ),
@@ -567,9 +636,6 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       },
     );
   }
-
-
-
 
   @override
   Widget build(BuildContext context) {
@@ -636,108 +702,93 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
           if (currentIndex == 4) Expanded(child: CustomerExpectedProductsWidget(customerName: widget.customerName)),
           if (currentIndex == 5)
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('cariHesaplar')
-                    .where('customerName', isEqualTo: widget.customerName) // Query using where clause
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return Center(child: CircularProgressIndicator()); // Loading indicator
-                  }
+              child: SingleChildScrollView(
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: DataTable(
+                    columns: [
+                      DataColumn(label: Text('İşlem Tipi')),
+                      DataColumn(label: Text('Kodu')),
+                      DataColumn(label: Text('Detay')),
+                      DataColumn(label: Text('Adet')),
+                      DataColumn(label: Text('Adet Fiyatı')),
+                      DataColumn(label: Text('İskonto')),
+                      DataColumn(label: Text('Toplam Fiyat')),
+                      DataColumn(label: Text('Genel Toplam')),
+                      DataColumn(label: Text('Tarih')),
+                      DataColumn(label: Text('Aksiyonlar')), // Bilgi butonları için yeni sütun
+                      DataColumn(label: Text('Düzenle')), // Sadece Düzenle butonu için sütun
+                    ],
+                    rows: [
+                      // Ürünler Listesi
+                      ...products.asMap().entries.map((entry) {
+                        int index = entry.key;
+                        Map<String, dynamic> product = entry.value;
 
-                  var docs = snapshot.data!.docs;
+                        // Toplam fiyat hesaplama
+                        double totalUpToThisRow = products.sublist(0, index + 1).fold(0.0, (sum, item) {
+                          return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+                        });
 
-                  if (docs.isEmpty) {
-                    print("No document found for customer: ${widget.customerName}");
-                    return Center(child: Text('Cari Hesap Takip için veri yok.'));
-                  }
+                        // Tarih formatlama
+                        String formattedDate = product['tarih'] != null
+                            ? DateFormat('dd MMM yyyy, HH:mm').format((product['tarih'] as Timestamp).toDate())
+                            : 'N/A'; // Eğer tarih yoksa 'N/A' yazılacak
 
-                  var data = docs.first.data() as Map<String, dynamic>?; // Get the first document
-
-                  if (data == null) {
-                    print("Data is null for customer: ${widget.customerName}");
-                    return Center(child: Text('Cari Hesap Takip için veri yok.'));
-                  }
-
-                  // Extract products and transactions
-                  var products = List<Map<String, dynamic>>.from(data['products'] ?? []);
-                  var transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
-
-                  if (products.isEmpty && transactions.isEmpty) {
-                    return Center(child: Text('Cari Hesap Takip için veri yok.'));
-                  }
-
-                  var combinedEntries = [...products, ...transactions];
-
-                  // Tarih sıralaması ekliyoruz
-                  combinedEntries.sort((a, b) {
-                    var aDate = (a['tarih'] != null) ? (a['tarih'] as Timestamp).toDate() : DateTime(1900);
-                    var bDate = (b['tarih'] != null) ? (b['tarih'] as Timestamp).toDate() : DateTime(1900);
-                    return aDate.compareTo(bDate); // İlk veri üstte olacak şekilde sıralama
-                  });
-
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: [
-                          DataColumn(label: Text('İşlem Tipi')),
-                          DataColumn(label: Text('Kodu')),
-                          DataColumn(label: Text('Detay')),
-                          DataColumn(label: Text('Adet')),
-                          DataColumn(label: Text('Adet Fiyatı')),
-                          DataColumn(label: Text('İskonto')),
-                          DataColumn(label: Text('Toplam Fiyat')),
-                          DataColumn(label: Text('Genel Toplam')),
-                          DataColumn(label: Text('Tarih')),
-                          DataColumn(label: Text('Aksiyonlar')), // Bilgi butonları için yeni sütun
-                          DataColumn(label: Text('Düzenle')), // Yeni Düzenle butonu sütunu ekliyoruz.
-                        ],
-                        rows: combinedEntries.asMap().entries.map((entry) {
-                          int productIndex = entry.key;
-                          Map<String, dynamic> product = entry.value;
-
-                          // Toplam fiyat hesaplama
-                          double totalUpToThisRow = combinedEntries.sublist(0, productIndex + 1).fold(0.0, (sum, item) {
-                            return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
-                          });
-
-                          // Tarih formatlama
-                          String formattedDate = product['tarih'] != null
-                              ? DateFormat('dd MMM yyyy, HH:mm').format((product['tarih'] as Timestamp).toDate())
-                              : 'N/A'; // Eğer tarih yoksa 'N/A' yazılacak
-
-                          return  DataRow(cells: [
-                            DataCell(Text(product['İşlem Tipi']?.toString() ?? '')),
-                            DataCell(Text(product['Kodu']?.toString() ?? '')),
-                            DataCell(Text(product['Detay']?.toString() ?? '')),
-                            DataCell(Text(product['Adet']?.toString() ?? '')),
-                            DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
-                            DataCell(Text(product['İskonto']?.toString() ?? '')),
-                            DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
-                            DataCell(Text(totalUpToThisRow.toStringAsFixed(2))), // Genel Toplam
-                            DataCell(Text(formattedDate)), // Tarih bilgisi
-                            DataCell(buildInfoButton(product)), // Bilgi butonu
-
-                            // Düzenle butonunu ekliyoruz
-                            DataCell(
-                              ElevatedButton(
-                                onPressed: () => showEditDialog(productIndex), // İlgili satır için düzenleme dialogu
-                                child: Text('Düzenle'),
-                              ),
+                        return DataRow(cells: [
+                          DataCell(Text(product['İşlem Tipi']?.toString() ?? '')),
+                          DataCell(Text(product['Kodu']?.toString() ?? '')),
+                          DataCell(Text(product['Detay']?.toString() ?? '')),
+                          DataCell(Text(product['Adet']?.toString() ?? '')),
+                          DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                          DataCell(Text(product['İskonto']?.toString() ?? '')),
+                          DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                          DataCell(Text(totalUpToThisRow.toStringAsFixed(2))), // Genel Toplam
+                          DataCell(Text(formattedDate)), // Tarih bilgisi
+                          DataCell(buildInfoButton(product)), // Bilgi butonu
+                          DataCell(
+                            ElevatedButton(
+                              onPressed: () => showEditDialog(index),
+                              child: Text('Düzenle'),
                             ),
-                          ]);
+                          ),
+                        ]);
+                      }).toList(),
+                      // İşlemler Listesi
+                      ...transactions.asMap().entries.map((entry) {
+                        int index = entry.key;
+                        Map<String, dynamic> transaction = entry.value;
 
-                        }).toList(),
-                      ),
-                    ),
-                  );
+                        // Toplam fiyat hesaplama
+                        double totalUpToThisRow = products.fold(0.0, (sum, item) {
+                          return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+                        }) + transactions.sublist(0, index + 1).fold(0.0, (sum, item) {
+                          return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
+                        });
 
+                        // Tarih formatlama
+                        String formattedDate = transaction['tarih'] != null
+                            ? DateFormat('dd MMM yyyy, HH:mm').format((transaction['tarih'] as Timestamp).toDate())
+                            : 'N/A'; // Eğer tarih yoksa 'N/A' yazılacak
 
-                },
+                        return DataRow(cells: [
+                          DataCell(Text(transaction['İşlem Tipi']?.toString() ?? '')),
+                          DataCell(Text(transaction['Kodu']?.toString() ?? '')),
+                          DataCell(Text(transaction['Detay']?.toString() ?? '')),
+                          DataCell(Text(transaction['Adet']?.toString() ?? '')),
+                          DataCell(Text(transaction['Adet Fiyatı']?.toString() ?? '')),
+                          DataCell(Text(transaction['İskonto']?.toString() ?? '')),
+                          DataCell(Text(transaction['Toplam Fiyat']?.toString() ?? '')),
+                          DataCell(Text(totalUpToThisRow.toStringAsFixed(2))),
+                          DataCell(Text(formattedDate)),
+                          DataCell(buildInfoButton(transaction)), // Bilgi butonu
+                          DataCell(SizedBox()), // İşlemler için "Düzenle" butonu yok
+                        ]);
+                      }).toList(),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -748,7 +799,16 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   ElevatedButton(
-                    onPressed: showAddOdemeDialog,
+                    onPressed: () {
+                      if (_isConnected) {
+                        showAddOdemeDialog();
+                      } else {
+                        _showNoConnectionDialog(
+                          'Bağlantı Sorunu',
+                          'İnternet bağlantısı yok, ödeme ekleme işlemi gerçekleştirilemiyor.',
+                        );
+                      }
+                    },
                     child: Text('Ödeme Ekle'),
                   ),
                   Text(
@@ -765,5 +825,5 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     );
   }
 
-
+// Diğer fonksiyonlar ve dialoglar burada...
 }

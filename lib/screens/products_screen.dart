@@ -5,6 +5,8 @@ import 'custom_app_bar.dart';
 import 'custom_bottom_bar.dart';
 import 'custom_drawer.dart';
 import 'purchase_history_screen.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ProductsScreen extends StatefulWidget {
   @override
@@ -22,6 +24,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
   List<String> selectedDoviz = [];
   List<String> selectedMarka = [];
 
+  // İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+  bool _isLoadingButton = false; // Yükleme durumu (isteğe bağlı)
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +39,60 @@ class _ProductsScreenState extends State<ProductsScreen> {
         fetchProducts();
       }
     });
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _searchController.dispose();
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    super.dispose();
   }
 
   Future<void> fetchProducts() async {
@@ -207,12 +269,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
           );
         } else {
           print('Ürün bulunamadı.');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ürün bulunamadı.')),
+          );
         }
       }
     } catch (e) {
       setState(() {
         print('Barkod tarama hatası: $e');
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Barkod tarama hatası: $e')),
+      );
     }
   }
 
@@ -328,7 +396,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
               children: [
                 IconButton(
                   icon: Icon(Icons.camera_alt, color: Colors.blue),
-                  onPressed: scanBarcode,
+                  onPressed: () {
+                    if (_isConnected) {
+                      scanBarcode();
+                    } else {
+                      _showNoConnectionDialog(
+                        'Bağlantı Sorunu',
+                        'İnternet bağlantısı yok, barkod tarama işlemi gerçekleştirilemiyor.',
+                      );
+                    }
+                  },
                 ),
                 Text('Ürün Tara'),
                 Expanded(
@@ -344,7 +421,16 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 ),
                 IconButton(
                   icon: Icon(Icons.filter_list),
-                  onPressed: showFilterDialog,
+                  onPressed: () {
+                    if (_isConnected) {
+                      showFilterDialog();
+                    } else {
+                      _showNoConnectionDialog(
+                        'Bağlantı Sorunu',
+                        'İnternet bağlantısı yok, filtreleme işlemi gerçekleştirilemiyor.',
+                      );
+                    }
+                  },
                 ),
               ],
             ),
@@ -371,13 +457,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
       ),
       bottomNavigationBar: CustomBottomBar(),
     );
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    _searchController.dispose();
-    super.dispose();
   }
 }
 

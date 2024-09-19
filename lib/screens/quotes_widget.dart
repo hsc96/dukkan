@@ -6,6 +6,8 @@ import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'pdf_template.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart'; // 1. Gerekli import
 
 class QuotesWidget extends StatefulWidget {
   final String customerName;
@@ -30,11 +32,72 @@ class _QuotesWidgetState extends State<QuotesWidget> {
   String? fullName;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // 2. İnternet bağlantısı kontrolü için değişkenler
+  bool _isConnected = true; // İnternet bağlantısı durumu
+  late StreamSubscription<ConnectivityResult> connectivitySubscription;
+  final Connectivity _connectivity = Connectivity();
+
   @override
   void initState() {
     super.initState();
     fetchQuotes();
     fetchCurrentUser();
+    _checkInitialConnectivity(); // Mevcut bağlantı durumunu kontrol et
+
+    // İnternet bağlantısı değişikliklerini dinleyin
+    connectivitySubscription = _connectivity.onConnectivityChanged.listen((ConnectivityResult result) {
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Connectivity Changed: $_isConnected'); // Debug için
+    });
+  }
+
+  // Mevcut internet bağlantısını kontrol eden fonksiyon
+  void _checkInitialConnectivity() async {
+    try {
+      ConnectivityResult result = await _connectivity.checkConnectivity();
+      setState(() {
+        _isConnected = result != ConnectivityResult.none;
+      });
+      print('Initial Connectivity Status: $_isConnected'); // Debug için
+    } catch (e) {
+      print("Bağlantı durumu kontrol edilirken hata oluştu: $e");
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  // 5. Yardımcı fonksiyon: İnternet yoksa uyarı dialog'u gösterir
+  void _showNoConnectionDialog(String title, String content) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    connectivitySubscription.cancel(); // Aboneliği iptal et
+    quantityController.dispose();
+    priceController.dispose();
+    explanationController.dispose();
+    orderNumberController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchCurrentUser() async {
@@ -77,6 +140,7 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       'products': quote['products'],
     });
   }
+
   void saveQuoteAsPDF(int quoteIndex) async {
     if (selectedQuoteIndexes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -127,7 +191,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
       print('PDF kaydedilirken hata oluştu: $e');
     }
   }
-
 
   void showExplanationDialogForQuoteProduct(int quoteIndex, int productIndex) {
     showDialog(
@@ -349,7 +412,6 @@ class _QuotesWidgetState extends State<QuotesWidget> {
     }
   }
 
-
   void toggleSelectAllProducts(int quoteIndex) {
     setState(() {
       var quoteProducts = quotes[quoteIndex]['products'] as List<Map<String, dynamic>>;
@@ -415,7 +477,9 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                     DataCell(Text(product['Kodu']?.toString() ?? '')),
                     DataCell(Text(product['Detay']?.toString() ?? '')),
                     DataCell(
-                      isTotalRow ? Text('') : Row(
+                      isTotalRow
+                          ? Text('')
+                          : Row(
                         children: [
                           isEditing && editingIndex == productIndex
                               ? Expanded(
@@ -468,7 +532,9 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                       ),
                     ),
                     DataCell(
-                      isTotalRow ? Text(product['Adet Fiyatı']?.toString() ?? '') : Row(
+                      isTotalRow
+                          ? Text(product['Adet Fiyatı']?.toString() ?? '')
+                          : Row(
                         children: [
                           isEditing && editingIndex == productIndex
                               ? Expanded(
@@ -523,7 +589,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                     DataCell(Text(product['İskonto']?.toString() ?? '')),
                     DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                     DataCell(
-                      !isTotalRow ? IconButton(
+                      !isTotalRow
+                          ? IconButton(
                         icon: Icon(Icons.edit, color: Colors.blue),
                         onPressed: () {
                           setState(() {
@@ -534,7 +601,8 @@ class _QuotesWidgetState extends State<QuotesWidget> {
                             priceController.text = product['Adet Fiyatı']?.toString() ?? '';
                           });
                         },
-                      ) : Container(),
+                      )
+                          : Container(),
                     ),
                   ]);
                 }).toList(),
@@ -544,13 +612,27 @@ class _QuotesWidgetState extends State<QuotesWidget> {
               children: [
                 TextButton(
                   onPressed: () {
-                    convertQuoteToOrder(index);
+                    if (_isConnected) {
+                      convertQuoteToOrder(index);
+                    } else {
+                      _showNoConnectionDialog(
+                        'Bağlantı Sorunu',
+                        'İnternet bağlantısı yok, siparişe dönüştürme işlemi gerçekleştirilemiyor.',
+                      );
+                    }
                   },
                   child: Text('Siparişe Dönüştür'),
                 ),
                 TextButton(
                   onPressed: () {
-                    saveQuoteAsPDF(index);
+                    if (_isConnected) {
+                      saveQuoteAsPDF(index);
+                    } else {
+                      _showNoConnectionDialog(
+                        'Bağlantı Sorunu',
+                        'İnternet bağlantısı yok, PDF\'e dönüştürme işlemi gerçekleştirilemiyor.',
+                      );
+                    }
                   },
                   child: Text('PDF\'e Dönüştür'),
                 ),
@@ -639,13 +721,13 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
                           });
                         },
                       ),
-                      Text('Is this product in stock?'),
+                      Text('Stokta mı?'),
                     ],
                   ),
                   if (product['isStock'] == true)
-                    Text('This product is in stock.')
+                    Text('Bu ürün stokta mevcut.')
                   else if (deliveryDate != null)
-                    Text('Delivery Date: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
+                    Text('Teslim Tarihi: ${DateFormat('dd MMMM yyyy').format(deliveryDate)}'),
                 ],
               ),
             );
@@ -658,7 +740,7 @@ class _DeliveryDateFormState extends State<DeliveryDateForm> {
             widget.onSave(updatedProducts);
             Navigator.of(context).pop(); // Dialog'u kapatma
           },
-          child: Text('Save'),
+          child: Text('Kaydet'),
         ),
       ],
     );
