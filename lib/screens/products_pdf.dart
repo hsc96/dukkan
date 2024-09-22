@@ -132,6 +132,8 @@ class ProductsPDF {
 
   static pw.Widget _buildProductInfo(Map<String, dynamic> product, pw.Font ttf) {
     List<pw.Widget> infoWidgets = [];
+
+    // Var olan bilgiler
     if (product['buttonInfo'] == 'Teklif') {
       infoWidgets.add(pw.Text('Teklif No: ${product['Teklif Numarası'] ?? 'N/A'}', style: pw.TextStyle(fontSize: 2.74, font: ttf)));
       infoWidgets.add(pw.Text('Sipariş No: ${product['Sipariş Numarası'] ?? 'N/A'}', style: pw.TextStyle(fontSize: 2.74, font: ttf)));
@@ -160,6 +162,11 @@ class ProductsPDF {
         DateTime readyDate = (product['Ürün Hazır Olma Tarihi'] as Timestamp).toDate();
         infoWidgets.add(pw.Text('Ürün Hazır Olma Tarihi: ${DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(readyDate)}', style: pw.TextStyle(fontSize: 2.74, font: ttf)));
       }
+    }
+
+    // **İşleme Alan Kullanıcı Bilgisi**'ni ekleyelim
+    if (product['islemeAlan'] != null && product['islemeAlan'] != 'N/A') {
+      infoWidgets.add(pw.Text('İşleme Alan: ${product['islemeAlan']}', style: pw.TextStyle(fontSize: 2.74, font: ttf)));
     }
 
     return pw.Column(children: infoWidgets);

@@ -30,6 +30,11 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
   List<Map<String, dynamic>> products = [];
   List<Map<String, dynamic>> transactions = [];
 
+  // Düzenleme için gerekli değişkenler
+  int? editIndex; // Hangi satırın düzenlendiğini tutar
+  List<TextEditingController> quantityControllers = [];
+  List<TextEditingController> priceControllers = [];
+
   // İnternet bağlantısı kontrolü için değişkenler
   bool _isConnected = true; // İnternet bağlantısı durumu
   late StreamSubscription<ConnectivityResult> connectivitySubscription;
@@ -89,6 +94,13 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
 
   @override
   void dispose() {
+    // Controllers'ı temizleyin
+    for (var controller in quantityControllers) {
+      controller.dispose();
+    }
+    for (var controller in priceControllers) {
+      controller.dispose();
+    }
     connectivitySubscription.cancel(); // Aboneliği iptal et
     super.dispose();
   }
@@ -106,6 +118,16 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
         products = List<Map<String, dynamic>>.from(data['products'] ?? []);
         transactions = List<Map<String, dynamic>>.from(data['transactions'] ?? []);
         calculateGenelToplam(); // Genel toplamı hesapla
+
+        // Controllers listelerini güncelle
+        quantityControllers = List.generate(
+          products.length,
+              (index) => TextEditingController(text: products[index]['Adet']?.toString() ?? ''),
+        );
+        priceControllers = List.generate(
+          products.length,
+              (index) => TextEditingController(text: products[index]['Adet Fiyatı']?.toString() ?? ''),
+        );
       });
     }
   }
@@ -124,124 +146,166 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     });
   }
 
-  void addProduct(Map<String, dynamic> newProduct) async {
-    var customerRef = FirebaseFirestore.instance
-        .collection('cariHesaplar')
-        .where('customerName', isEqualTo: widget.customerName)
-        .limit(1);
+  void startEdit(int index) {
+    setState(() {
+      editIndex = index;
+    });
+  }
 
-    var querySnapshot = await customerRef.get();
+  void cancelEdit() {
+    setState(() {
+      editIndex = null;
+      fetchCariHesaplar(); // Eski değerleri geri yükle
+    });
+  }
 
-    if (querySnapshot.docs.isNotEmpty) {
-      var docRef = querySnapshot.docs.first.reference;
-      var data = querySnapshot.docs.first.data();
+  Future<void> saveEdit(int index) async {
+    String newQuantityStr = quantityControllers[index].text;
+    String newPriceStr = priceControllers[index].text;
 
-      List<dynamic> existingProducts = data['products'] ?? [];
+    double newQuantity = double.tryParse(newQuantityStr) ?? 0.0;
+    double newPrice = double.tryParse(newPriceStr) ?? 0.0;
+    double newTotalPrice = newQuantity * newPrice;
 
-      // Her ürün eklemede tarih/saat bilgisini ekliyoruz
-      newProduct['tarih'] = Timestamp.now();  // Eklenen ürünlerin tarih bilgisini alır
+    // Açıklama almak için bir dialog açın
+    String? explanation = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        TextEditingController explanationController = TextEditingController();
+        return AlertDialog(
+          title: Text('Açıklama Girin'),
+          content: TextField(
+            controller: explanationController,
+            decoration: InputDecoration(
+              hintText: 'Değişiklik açıklaması',
+            ),
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // İptal
+              },
+              child: Text('İptal'),
+            ),
+            TextButton(
+              onPressed: () {
+                String explanation = explanationController.text.trim();
+                if (explanation.isNotEmpty) {
+                  Navigator.of(context).pop(explanation); // Açıklamayı döndür
+                } else {
+                  // Açıklama boşsa uyarı göster
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Açıklama girmelisiniz')),
+                  );
+                }
+              },
+              child: Text('Kaydet'),
+            ),
+          ],
+        );
+      },
+    );
 
-      existingProducts.add(newProduct);
+    if (explanation != null) {
+      setState(() {
+        // Eski değerleri kaydet
+        String? eskiAdet = products[index]['Adet']?.toString() ?? 'N/A';
+        String? eskiFiyat = products[index]['Adet Fiyatı']?.toString() ?? 'N/A';
 
-      await docRef.update({
-        'products': existingProducts,
-      }).then((_) {
-        print('Ürün başarıyla eklendi.');
-        fetchCariHesaplar();  // Verileri yeniden yükle ve ekrana yansıt
-      }).catchError((error) {
-        print('Yeni ürün eklenirken hata oluştu: $error');
+        // Yeni değerleri güncelle
+        products[index]['Adet'] = newQuantity.toString();
+        products[index]['Adet Fiyatı'] = newPrice.toString();
+        products[index]['Toplam Fiyat'] = newTotalPrice.toStringAsFixed(2);
+        editIndex = null; // Düzenleme modunu kapat
+
+        // Değişiklikleri 'changeHistory' listesine ekle
+        if (products[index]['changeHistory'] == null) {
+          products[index]['changeHistory'] = [];
+        }
+
+        List<dynamic> history = products[index]['changeHistory'];
+        history.add({
+          'Eski Adet': eskiAdet,
+          'Eski Fiyat': eskiFiyat,
+          'Açıklama': explanation,
+          'Değiştiren': 'Admin', // Kullanıcı bilgisi (Dinamik yapmak isterseniz auth kullanabilirsiniz)
+          'Değişim Tarihi': DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now()),
+        });
       });
+
+      // Firestore'da güncelleme
+      var customerRef = FirebaseFirestore.instance
+          .collection('cariHesaplar')
+          .where('customerName', isEqualTo: widget.customerName)
+          .limit(1);
+
+      var querySnapshot = await customerRef.get();
+      if (querySnapshot.docs.isNotEmpty) {
+        var docRef = querySnapshot.docs.first.reference;
+        await docRef.update({
+          'products': products,
+        }).then((_) {
+          fetchCariHesaplar(); // Verileri yeniden yükle
+          calculateGenelToplam(); // Genel toplamı yeniden hesapla
+        }).catchError((error) {
+          print('Ürün güncellenirken hata oluştu: $error');
+        });
+      }
+    } else {
+      // Kullanıcı açıklama girmeden kaydetmeyi iptal etti
+      // İstediğiniz başka bir işlem varsa burada yapabilirsiniz
     }
   }
 
-  void calculateGenelToplamUpdated() {
-    double totalProducts = products.fold(0.0, (sum, item) {
-      return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
-    });
-
-    double totalTransactions = transactions.fold(0.0, (sum, item) {
-      return sum + (double.tryParse(item['Toplam Fiyat']?.toString() ?? '0.0') ?? 0.0);
-    });
-
-    setState(() {
-      genelToplam = totalProducts + totalTransactions;
-    });
+  Future<bool> showDeleteConfirmationDialog() async {
+    return await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürünü Sil'),
+          content: Text('Bu ürünü silmek istediğinizden emin misiniz?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false); // İptal
+              },
+              child: Text('İptal'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true); // Onay
+              },
+              child: Text('Sil'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
-  void processSelectedProductsToAccountTracking(List<int> selectedIndexes, List<Map<String, dynamic>> customerProducts) async {
-    List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
+  Future<void> removeProduct(int index) async {
+    bool shouldDelete = await showDeleteConfirmationDialog();
+    if (shouldDelete) {
+      var customerRef = FirebaseFirestore.instance
+          .collection('cariHesaplar')
+          .where('customerName', isEqualTo: widget.customerName)
+          .limit(1);
 
-    for (var product in selectedProducts) {
-      await FirebaseFirestore.instance.collection('cariHesaplar').add({
-        'customerName': widget.customerName,
-        'Kodu': product['Kodu'],
-        'Detay': product['Detay'],
-        'Adet': product['Adet'],
-        'Adet Fiyatı': product['Adet Fiyatı'],
-        'İskonto': product['İskonto'],
-        'Toplam Fiyat': product['Toplam Fiyat'],
-        'Genel Toplam': product['Genel Toplam'],
-        'İşlem Tipi': 'Satış',
-        'tarih': Timestamp.now(),
-      });
-    }
+      var querySnapshot = await customerRef.get();
+      if (querySnapshot.docs.isNotEmpty) {
+        var docRef = querySnapshot.docs.first.reference;
+        products.removeAt(index); // Ürünü listeden sil
 
-    setState(() {
-      customerProducts.removeWhere((product) => selectedProducts.contains(product));
-    });
-
-    fetchCariHesaplar(); // Veritabanından cari hesap verilerini tekrar yükle
-  }
-
-  void addOdeme(double amount) async {
-    setState(() {
-      genelToplam -= amount;
-
-      // Ödeme eklerken tarih/saat bilgisini de ekleyelim
-      transactions.add({
-        'Kodu': '',
-        'Detay': 'Ödeme Eklendi',
-        'Adet': '',
-        'Adet Fiyatı': '',
-        'İskonto': '',
-        'Toplam Fiyat': '-$amount',
-        'Genel Toplam': genelToplam,
-        'İşlem Tipi': 'Ödeme',
-        'tarih': Timestamp.now(),  // Ödeme tarihini ekliyoruz
-      });
-    });
-
-    var customerRef = FirebaseFirestore.instance
-        .collection('cariHesaplar')
-        .where('customerName', isEqualTo: widget.customerName)
-        .limit(1);
-
-    var querySnapshot = await customerRef.get();
-
-    if (querySnapshot.docs.isNotEmpty) {
-      var docRef = querySnapshot.docs.first.reference;
-      var data = querySnapshot.docs.first.data();
-
-      List<dynamic> existingTransactions = data['transactions'] ?? [];
-      existingTransactions.add({
-        'Kodu': '',
-        'Detay': 'Ödeme Eklendi',
-        'Adet': '',
-        'Adet Fiyatı': '',
-        'İskonto': '',
-        'Toplam Fiyat': '-$amount',
-        'Genel Toplam': genelToplam,
-        'İşlem Tipi': 'Ödeme',
-        'tarih': Timestamp.now(),  // Ödeme tarihini ekliyoruz
-      });
-
-      await docRef.update({
-        'transactions': existingTransactions,
-      }).then((_) {
-        fetchCariHesaplar(); // Verileri yeniden yükle
-      }).catchError((error) {
-        print('Ödeme güncellenirken hata oluştu: $error');
-      });
+        await docRef.update({
+          'products': products,
+        }).then((_) {
+          fetchCariHesaplar(); // Verileri yeniden yükle
+          calculateGenelToplam(); // Genel toplamı yeniden hesapla
+        }).catchError((error) {
+          print('Ürün silinirken hata oluştu: $error');
+        });
+      }
     }
   }
 
@@ -251,7 +315,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     bool hasKitInfo = product['Ana Kit Adı'] != null && product['Ana Kit Adı'] != 'N/A';
     bool hasSalesInfo = product['whoTook'] != null && product['whoTook'] != 'N/A';
     bool hasExpectedInfo = product['buttonInfo'] == 'B.sipariş';
-    bool hasAdetOrFiyatInfo = product['Eski Adet'] != null || product['Eski Fiyat'] != null;
+    bool hasAdetOrFiyatInfo = product['changeHistory'] != null && (product['changeHistory'] as List).isNotEmpty;
 
     return Column(
       children: [
@@ -281,7 +345,7 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
           ),
         if (hasAdetOrFiyatInfo)
           ElevatedButton(
-            onPressed: () => showInfoDialogForChanges(product), // Değişiklik dialogu için fonksiyon
+            onPressed: () => showChangeHistoryDialog(product), // Değişiklik dialogu için fonksiyon
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
             child: Text('Bilgi'),
           ),
@@ -290,20 +354,41 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
   }
 
   // Değişiklikleri gösterecek olan dialog fonksiyonu
-  void showInfoDialogForChanges(Map<String, dynamic> product) {
+  void showChangeHistoryDialog(Map<String, dynamic> product) {
+    List<dynamic> history = product['changeHistory'] ?? [];
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Değişiklik Bilgisi'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Eski Adet: ${product['Eski Adet'] ?? 'N/A'}'),
-              Text('Eski Fiyat: ${product['Eski Fiyat'] ?? 'N/A'}'),
-              Text('Değiştiren: ${product['Değiştiren'] ?? 'N/A'}'),
-              Text('Değişim Tarihi: ${product['İşlem Tarihi'] ?? 'N/A'}'),
-            ],
+          title: Text('Değişiklik Geçmişi'),
+          content: history.isEmpty
+              ? Text('Hiçbir değişiklik yapılmamış.')
+              : Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: history.length,
+              itemBuilder: (context, index) {
+                var change = history[index];
+                return ListTile(
+                  leading: Icon(Icons.history, color: Colors.blue),
+                  title: Text(
+                    'Değiştiren: ${change['Değiştiren'] ?? 'N/A'}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Değişim Tarihi: ${change['Değişim Tarihi'] ?? 'N/A'}'),
+                      Text('Eski Adet: ${change['Eski Adet'] ?? 'N/A'}'),
+                      Text('Eski Fiyat: ${change['Eski Fiyat'] ?? 'N/A'}'),
+                      Text('Açıklama: ${change['Açıklama'] ?? 'N/A'}'),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
           actions: [
             TextButton(
@@ -361,6 +446,60 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
       },
     );
   }
+
+  void addOdeme(double amount) async {
+    setState(() {
+      genelToplam -= amount;
+
+      // Ödeme eklerken tarih/saat bilgisini de ekleyelim
+      transactions.add({
+        'Kodu': '',
+        'Detay': 'Ödeme Eklendi',
+        'Adet': '',
+        'Adet Fiyatı': '',
+        'İskonto': '',
+        'Toplam Fiyat': '-$amount',
+        'Genel Toplam': genelToplam,
+        'İşlem Tipi': 'Ödeme',
+        'tarih': Timestamp.now(),  // Ödeme tarihini ekliyoruz
+      });
+    });
+
+    var customerRef = FirebaseFirestore.instance
+        .collection('cariHesaplar')
+        .where('customerName', isEqualTo: widget.customerName)
+        .limit(1);
+
+    var querySnapshot = await customerRef.get();
+
+    if (querySnapshot.docs.isNotEmpty) {
+      var docRef = querySnapshot.docs.first.reference;
+      var data = querySnapshot.docs.first.data();
+
+      List<dynamic> existingTransactions = data['transactions'] ?? [];
+      existingTransactions.add({
+        'Kodu': '',
+        'Detay': 'Ödeme Eklendi',
+        'Adet': '',
+        'Adet Fiyatı': '',
+        'İskonto': '',
+        'Toplam Fiyat': '-$amount',
+        'Genel Toplam': genelToplam,
+        'İşlem Tipi': 'Ödeme',
+        'tarih': Timestamp.now(),  // Ödeme tarihini ekliyoruz
+      });
+
+      await docRef.update({
+        'transactions': existingTransactions,
+      }).then((_) {
+        fetchCariHesaplar(); // Verileri yeniden yükle
+      }).catchError((error) {
+        print('Ödeme güncellenirken hata oluştu: $error');
+      });
+    }
+  }
+
+  // Diğer bilgi dialog fonksiyonları aynı kalabilir...
 
   void showInfoDialogForQuote(Map<String, dynamic> product) {
     showDialog(
@@ -489,152 +628,29 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
     );
   }
 
-  Future<bool> showDeleteConfirmationDialog() async {
-    return await showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Ürünü Sil'),
-          content: Text('Bu ürünü silmek istediğinizden emin misiniz?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(false); // İptal
-              },
-              child: Text('İptal'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(true); // Onay
-              },
-              child: Text('Sil'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  Future<void> processSelectedProductsToAccountTracking(List<int> selectedIndexes, List<Map<String, dynamic>> customerProducts) async {
+    List<Map<String, dynamic>> selectedProducts = selectedIndexes.map((index) => customerProducts[index]).toList();
 
-  Future<void> removeProduct(int index) async {
-    bool shouldDelete = await showDeleteConfirmationDialog();
-    if (shouldDelete) {
-      var customerRef = FirebaseFirestore.instance
-          .collection('cariHesaplar')
-          .where('customerName', isEqualTo: widget.customerName)
-          .limit(1);
-
-      var querySnapshot = await customerRef.get();
-      if (querySnapshot.docs.isNotEmpty) {
-        var docRef = querySnapshot.docs.first.reference;
-        products.removeAt(index); // Ürünü listeden sil
-
-        await docRef.update({
-          'products': products,
-        }).then((_) {
-          fetchCariHesaplar(); // Verileri yeniden yükle
-        }).catchError((error) {
-          print('Ürün silinirken hata oluştu: $error');
-        });
-      }
+    for (var product in selectedProducts) {
+      await FirebaseFirestore.instance.collection('cariHesaplar').add({
+        'customerName': widget.customerName,
+        'Kodu': product['Kodu'],
+        'Detay': product['Detay'],
+        'Adet': product['Adet'],
+        'Adet Fiyatı': product['Adet Fiyatı'],
+        'İskonto': product['İskonto'],
+        'Toplam Fiyat': product['Toplam Fiyat'],
+        'Genel Toplam': product['Genel Toplam'],
+        'İşlem Tipi': 'Satış',
+        'tarih': Timestamp.now(),
+      });
     }
-  }
 
-  void showEditDialog(int index) {
-    TextEditingController quantityController = TextEditingController();
-    TextEditingController priceController = TextEditingController();
+    setState(() {
+      customerProducts.removeWhere((product) => selectedProducts.contains(product));
+    });
 
-    // Ürünün mevcut değerlerini al
-    quantityController.text = products[index]['Adet']?.toString() ?? '';
-    priceController.text = products[index]['Adet Fiyatı']?.toString() ?? '';
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Ürünü Düzenle'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: quantityController,
-                decoration: InputDecoration(labelText: 'Adet'),
-                keyboardType: TextInputType.number,
-              ),
-              TextField(
-                controller: priceController,
-                decoration: InputDecoration(labelText: 'Adet Fiyatı'),
-                keyboardType: TextInputType.number,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Dialog'u kapat
-              },
-              child: Text('İptal'),
-            ),
-            TextButton(
-              onPressed: () async {
-                if (_isConnected) { // İnternet bağlantısı kontrolü
-                  // Eski değerleri bul
-                  double eskiAdet = double.tryParse(products[index]['Adet']?.toString() ?? '1') ?? 1;
-                  double eskiFiyat = double.tryParse(products[index]['Adet Fiyatı']?.toString() ?? '0.0') ?? 0.0;
-                  double eskiToplam = eskiAdet * eskiFiyat;
-
-                  // Yeni değerleri al
-                  double yeniAdet = double.tryParse(quantityController.text) ?? eskiAdet;
-                  double yeniFiyat = double.tryParse(priceController.text) ?? eskiFiyat;
-                  double yeniToplam = yeniAdet * yeniFiyat;
-
-                  setState(() {
-                    // Eski değerleri kaydet
-                    products[index]['Eski Adet'] = eskiAdet.toString();
-                    products[index]['Eski Fiyat'] = eskiFiyat.toString();
-                    products[index]['Değiştiren'] = 'Admin'; // Kullanıcı bilgisi
-                    products[index]['İşlem Tarihi'] = DateFormat('dd MMMM yyyy, HH:mm').format(DateTime.now());
-
-                    // Yeni değerleri güncelle
-                    products[index]['Adet'] = yeniAdet.toString();
-                    products[index]['Adet Fiyatı'] = yeniFiyat.toString();
-                    products[index]['Toplam Fiyat'] = yeniToplam.toStringAsFixed(2);
-                  });
-
-                  // Firestore'da güncelle
-                  var customerRef = FirebaseFirestore.instance
-                      .collection('cariHesaplar')
-                      .where('customerName', isEqualTo: widget.customerName)
-                      .limit(1);
-
-                  var querySnapshot = await customerRef.get();
-                  if (querySnapshot.docs.isNotEmpty) {
-                    var docRef = querySnapshot.docs.first.reference;
-                    await docRef.update({
-                      'products': products,
-                    }).then((_) {
-                      // Tablodaki toplam ve verileri güncelle
-                      fetchCariHesaplar();
-                      // Genel toplamı yeniden hesapla
-                      calculateGenelToplam();
-                    }).catchError((error) {
-                      print('Ürün güncellenirken hata oluştu: $error');
-                    });
-                  }
-
-                  Navigator.of(context).pop(); // Dialog'u kapat
-                } else {
-                  _showNoConnectionDialog(
-                    'Bağlantı Sorunu',
-                    'İnternet bağlantısı yok, ürün düzenleme işlemi gerçekleştirilemiyor.',
-                  );
-                }
-              },
-              child: Text('Kaydet'),
-            ),
-          ],
-        );
-      },
-    );
+    fetchCariHesaplar(); // Veritabanından cari hesap verilerini tekrar yükle
   }
 
   @override
@@ -717,14 +733,15 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
                       DataColumn(label: Text('Toplam Fiyat')),
                       DataColumn(label: Text('Genel Toplam')),
                       DataColumn(label: Text('Tarih')),
-                      DataColumn(label: Text('Aksiyonlar')), // Bilgi butonları için yeni sütun
-                      DataColumn(label: Text('Düzenle')), // Sadece Düzenle butonu için sütun
+                      DataColumn(label: Text('Aksiyonlar')), // Bilgi butonları için sütun
+                      DataColumn(label: Text('İşlemler')), // Düzenle ve Sil ikonları için sütun
                     ],
                     rows: [
                       // Ürünler Listesi
                       ...products.asMap().entries.map((entry) {
                         int index = entry.key;
                         Map<String, dynamic> product = entry.value;
+                        bool isEditing = editIndex == index; // Hangi satırın düzenlendiğini kontrol eder
 
                         // Toplam fiyat hesaplama
                         double totalUpToThisRow = products.sublist(0, index + 1).fold(0.0, (sum, item) {
@@ -740,17 +757,84 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
                           DataCell(Text(product['İşlem Tipi']?.toString() ?? '')),
                           DataCell(Text(product['Kodu']?.toString() ?? '')),
                           DataCell(Text(product['Detay']?.toString() ?? '')),
-                          DataCell(Text(product['Adet']?.toString() ?? '')),
-                          DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                          DataCell(
+                            isEditing
+                                ? TextField(
+                              controller: quantityControllers[index],
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done, // Klavyede "Tamam" butonunu göster
+                              onSubmitted: (_) => saveEdit(index), // "Tamam" tikine basıldığında saveEdit çağrılır
+                              decoration: InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                            )
+                                : Row(
+                              children: [
+                                Text(product['Adet']?.toString() ?? ''),
+                                if (product['changeHistory'] != null && (product['changeHistory'] as List).isNotEmpty)
+                                  IconButton(
+                                    icon: Icon(Icons.info, color: Colors.blue, size: 16),
+                                    onPressed: () => showChangeHistoryDialog(product),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          DataCell(
+                            isEditing
+                                ? TextField(
+                              controller: priceControllers[index],
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done, // Klavyede "Tamam" butonunu göster
+                              onSubmitted: (_) => saveEdit(index), // "Tamam" tikine basıldığında saveEdit çağrılır
+                              decoration: InputDecoration(
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                            )
+                                : Row(
+                              children: [
+                                Text(product['Adet Fiyatı']?.toString() ?? ''),
+                                if (product['changeHistory'] != null && (product['changeHistory'] as List).isNotEmpty)
+                                  IconButton(
+                                    icon: Icon(Icons.info, color: Colors.blue, size: 16),
+                                    onPressed: () => showChangeHistoryDialog(product),
+                                  ),
+                              ],
+                            ),
+                          ),
                           DataCell(Text(product['İskonto']?.toString() ?? '')),
                           DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                           DataCell(Text(totalUpToThisRow.toStringAsFixed(2))), // Genel Toplam
                           DataCell(Text(formattedDate)), // Tarih bilgisi
                           DataCell(buildInfoButton(product)), // Bilgi butonu
                           DataCell(
-                            ElevatedButton(
-                              onPressed: () => showEditDialog(index),
-                              child: Text('Düzenle'),
+                            isEditing
+                                ? Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.check, color: Colors.green),
+                                  onPressed: () => saveEditRow(index),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.close, color: Colors.red),
+                                  onPressed: () => cancelEditRow(),
+                                ),
+                              ],
+                            )
+                                : Row(
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.edit, color: Colors.blue),
+                                  onPressed: () => startEditRow(index),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () => removeProduct(index),
+                                ),
+                              ],
                             ),
                           ),
                         ]);
@@ -791,7 +875,6 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
                 ),
               ),
             ),
-
           if (currentIndex == 5)
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -818,12 +901,21 @@ class _CariHesapTakipScreenState extends State<CariHesapTakipScreen> {
                 ],
               ),
             ),
-
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
     );
   }
 
-// Diğer fonksiyonlar ve dialoglar burada...
+  void saveEditRow(int index) {
+    saveEdit(index);
+  }
+
+  void startEditRow(int index) {
+    startEdit(index);
+  }
+
+  void cancelEditRow() {
+    cancelEdit();
+  }
 }

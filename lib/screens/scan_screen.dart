@@ -525,7 +525,7 @@ class _ScanScreenState extends State<ScanScreen> {
         if (snapshot.exists) {
           List<dynamic> existingProducts = snapshot.data()?['products'] ?? [];
 
-          // Ürün fiyatını 'urunler' koleksiyonundan çek
+          // Ürün fiyatını ve stok bilgisini 'urunler' koleksiyonundan çek
           Map<String, dynamic> productDetails = await firestoreService.fetchProductDetails(productData['Kodu']);
           double price = double.tryParse(productDetails['Fiyat']?.toString() ?? '') ?? 0.0;
 
@@ -569,23 +569,43 @@ class _ScanScreenState extends State<ScanScreen> {
             }
           }
 
-          // Hata ayıklama için kullanıcı bilgisi ve ürün detayı çıktı alalım
-          print('Seçilen müşteri: $selectedCustomer');
-          print('Uygulanan iskonto oranı: $discountRate');
-          print('Kullanıcı: $currentUserFullName');
+          // **Adet bilgisi girmek için dialog aç**
+          Map<String, dynamic>? dialogResult = await showQuantityInputDialog(productDetails['Kodu']);
 
-          existingProducts.add({
+          if (dialogResult == null) {
+            // Kullanıcı dialog'u iptal ettiyse işlem yapma
+            return;
+          }
+
+          int quantity = dialogResult['quantity'] ?? 1;
+          bool isLowStock = dialogResult['isLowStock'] ?? false;
+          int? orderQuantity = dialogResult['orderQuantity'];
+          String? description = dialogResult['description'];
+
+          // Ürün bilgilerini oluştur
+          Map<String, dynamic> productInfo = {
             'Kodu': productDetails['Kodu'],
             'Detay': productDetails['Detay'],
-            'Adet': '1',
+            'Adet': quantity.toString(),
             'Adet Fiyatı': discountedPrice.toStringAsFixed(2), // İskonto uygulanmış fiyat
-            'Toplam Fiyat': discountedPrice.toStringAsFixed(2),
+            'Toplam Fiyat': (discountedPrice * quantity).toStringAsFixed(2),
             'İskonto': discountRate > 0 ? '%$discountRate' : '0%', // İskonto bilgisi
             'addedBy': currentUserFullName ?? 'Unknown User', // Ekleyen kullanıcı bilgisi
-          });
+          };
 
+          existingProducts.add(productInfo);
 
           await currentDocRef.update({'products': existingProducts});
+
+          // Eğer stok durumu düşük olarak işaretlendiyse, `lowStockRequests` koleksiyonuna ekle
+          if (isLowStock) {
+            await addProductToLowStockRequests(
+              productDetails,
+              currentUserFullName,
+              orderQuantity,
+              description,
+            );
+          }
         } else {
           print('Snapshot exists hatası: snapshot bulunamadı.');
         }
@@ -596,6 +616,155 @@ class _ScanScreenState extends State<ScanScreen> {
       print('Hata oluştu: $e'); // Hatayı yakalayıp terminale yazdırıyoruz
     }
   }
+
+  Future<void> addProductToLowStockRequests(
+      Map<String, dynamic> productDetails,
+      String? currentUserFullName,
+      int? orderQuantity,
+      String? description,
+      ) async {
+    try {
+      await FirebaseFirestore.instance.collection('lowStockRequests').add({
+        'Kodu': productDetails['Kodu'],
+        'Detay': productDetails['Detay'],
+        'Adet': '1',
+        'orderQuantity': orderQuantity,
+        'description': description,
+        'requestedBy': currentUserFullName ?? 'Unknown User',
+        'requestDate': DateTime.now(),
+      });
+      print('Product added to lowStockRequests from scan_screen');
+    } catch (e) {
+      print('Error adding product to lowStockRequests: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> showQuantityInputDialog(String productCode) async {
+
+  TextEditingController quantityController = TextEditingController(text: '1');
+    TextEditingController orderQuantityController = TextEditingController();
+    TextEditingController descriptionController = TextEditingController();
+    bool isLowStock = false;
+
+    Future<bool> checkIfProductIsAlreadyLowStock(String productCode) async {
+      DateTime oneWeekAgo = DateTime.now().subtract(Duration(days: 7));
+      QuerySnapshot snapshot = await FirebaseFirestore.instance
+          .collection('lowStockRequests')
+          .where('Kodu', isEqualTo: productCode)
+          .where('requestDate', isGreaterThanOrEqualTo: oneWeekAgo)
+          .get();
+
+      return snapshot.docs.isNotEmpty;
+    }
+
+    Future<bool> showAlreadyLowStockWarning() async {
+      return await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Uyarı'),
+            content: Text('Bu ürün zaten son 1 hafta içinde stok durumu düşük olarak belirtilmiş. Yine de bildirim yapmak istiyor musunuz?'),
+            actions: [
+              TextButton(
+                child: Text('Hayır'),
+                onPressed: () {
+                  Navigator.of(context).pop(false);
+                },
+              ),
+              TextButton(
+                child: Text('Evet'),
+                onPressed: () {
+                  Navigator.of(context).pop(true);
+                },
+              ),
+            ],
+          );
+        },
+      ) ?? false;
+    }
+
+    // Dialog ekranı açılıyor
+    return await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Adet Giriniz'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Adet',
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: isLowStock,
+                          onChanged: (value) {
+                            setState(() {
+                              isLowStock = value ?? false;
+                            });
+                          },
+                        ),
+                        Text('Stok Durumu Düşük'),
+                      ],
+                    ),
+                    if (isLowStock) ...[
+                      TextField(
+                        controller: orderQuantityController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'Sipariş Geçilecek Adet',
+                        ),
+                      ),
+                      TextField(
+                        controller: descriptionController,
+                        decoration: InputDecoration(
+                          labelText: 'Açıklama',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  child: Text('İptal'),
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Dialog'u kapatır ve null döndürür
+                  },
+                ),
+                TextButton(
+                  child: Text('Tamam'),
+                  onPressed: () {
+                    int quantity = int.tryParse(quantityController.text) ?? 1;
+                    int? orderQuantity;
+                    if (isLowStock) {
+                      orderQuantity = int.tryParse(orderQuantityController.text) ?? 0;
+                    }
+                    Navigator.of(context).pop({
+                      'quantity': quantity,
+                      'isLowStock': isLowStock,
+                      'orderQuantity': orderQuantity,
+                      'description': descriptionController.text,
+                    }); // Girilen değerleri döndürür
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
 
 
 

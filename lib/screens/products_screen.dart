@@ -7,6 +7,11 @@ import 'custom_drawer.dart';
 import 'purchase_history_screen.dart';
 import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'low_stock_products_screen.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'archived_orders_screen.dart';
+
 
 class ProductsScreen extends StatefulWidget {
   @override
@@ -142,15 +147,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
         // Mükerrer kontrolü
         var existingKoduSet = products.map((product) => product['Kodu']).toSet();
-        var filteredProducts = newProducts.where((product) => !existingKoduSet.contains(product['Kodu'])).toList();
 
-        print('Adding ${filteredProducts.length} new products to the list');
+        var uniqueProducts = newProducts.where((product) => !existingKoduSet.contains(product['Kodu'])).toList();
 
         setState(() {
-          products.addAll(filteredProducts);
+          products.addAll(uniqueProducts);
         });
 
-        if (filteredProducts.isEmpty) {
+        if (uniqueProducts.isEmpty) {
           setState(() {
             hasMore = false;
           });
@@ -169,6 +173,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
     });
   }
 
+
   void searchProducts(String query) {
     setState(() {
       searchQuery = query;
@@ -177,70 +182,106 @@ class _ProductsScreenState extends State<ProductsScreen> {
       hasMore = true;
     });
 
-    if (selectedDoviz.isNotEmpty || selectedMarka.isNotEmpty) {
-      fetchProducts();
-    } else {
-      // Eğer filtreleme yapılmamışsa, doğrudan veritabanında arama yap
-      Query koduQuery = FirebaseFirestore.instance
-          .collection('urunler')
-          .where('Kodu', isGreaterThanOrEqualTo: searchQuery)
-          .where('Kodu', isLessThanOrEqualTo: searchQuery + '\uf8ff')
-          .limit(50);
+    // Arama işlemi
+    Query koduQuery = FirebaseFirestore.instance
+        .collection('urunler')
+        .where('Kodu', isGreaterThanOrEqualTo: searchQuery)
+        .where('Kodu', isLessThanOrEqualTo: searchQuery + '\uf8ff')
+        .limit(50);
 
-      Query detayQuery = FirebaseFirestore.instance
-          .collection('urunler')
-          .where('Detay', isGreaterThanOrEqualTo: searchQuery)
-          .where('Detay', isLessThanOrEqualTo: searchQuery + '\uf8ff')
-          .limit(50);
+    Query detayQuery = FirebaseFirestore.instance
+        .collection('urunler')
+        .where('Detay', isGreaterThanOrEqualTo: searchQuery)
+        .where('Detay', isLessThanOrEqualTo: searchQuery + '\uf8ff')
+        .limit(50);
 
-      Future.wait([koduQuery.get(), detayQuery.get()]).then((results) {
-        var allDocs = [...results[0].docs, ...results[1].docs];
-        print('Search returned ${allDocs.length} documents');
+    Future.wait([koduQuery.get(), detayQuery.get()]).then((results) {
+      var allDocs = [...results[0].docs, ...results[1].docs];
+      print('Search returned ${allDocs.length} documents');
 
-        var uniqueDocs = allDocs.toSet().toList();
-        print('Unique documents count: ${uniqueDocs.length}');
+      // Mükerrer kontrolü
+      var uniqueDocs = {};
+      allDocs.forEach((doc) {
+        uniqueDocs[doc['Kodu']] = doc;
+      });
 
-        if (uniqueDocs.isNotEmpty) {
-          lastDocument = uniqueDocs.last;
+      var uniqueDocList = uniqueDocs.values.toList();
 
-          var newProducts = uniqueDocs.map((doc) {
-            var data = doc.data() as Map<String, dynamic>;
-            return {
-              'Ana Birim': data['Ana Birim'] ?? '',
-              'Barkod': data['Barkod'] ?? '',
-              'Detay': data['Detay'] ?? '',
-              'Doviz': data['Doviz'] ?? '',
-              'Fiyat': data['Fiyat'] ?? '',
-              'Kodu': data['Kodu'] ?? '',
-              'Marka': data['Marka'] ?? '',
-            };
-          }).toList();
+      print('Unique documents count: ${uniqueDocList.length}');
 
-          // Mükerrer kontrolü
-          var existingKoduSet = products.map((product) => product['Kodu']).toSet();
-          var filteredProducts = newProducts.where((product) => !existingKoduSet.contains(product['Kodu'])).toList();
+      if (uniqueDocList.isNotEmpty) {
+        lastDocument = uniqueDocList.last;
 
-          print('Adding ${filteredProducts.length} new products to the list after search');
+        var newProducts = uniqueDocList.map((doc) {
+          var data = doc.data() as Map<String, dynamic>;
+          return {
+            'Ana Birim': data['Ana Birim'] ?? '',
+            'Barkod': data['Barkod'] ?? '',
+            'Detay': data['Detay'] ?? '',
+            'Doviz': data['Doviz'] ?? '',
+            'Fiyat': data['Fiyat'] ?? '',
+            'Kodu': data['Kodu'] ?? '',
+            'Marka': data['Marka'] ?? '',
+          };
+        }).toList();
 
-          setState(() {
-            products.addAll(filteredProducts);
-          });
+        setState(() {
+          products.addAll(newProducts);
+        });
 
-          if (filteredProducts.isEmpty) {
-            setState(() {
-              hasMore = false;
-            });
-          }
-        } else {
+        if (newProducts.isEmpty) {
           setState(() {
             hasMore = false;
           });
         }
-      }).catchError((error) {
-        print('Error searching products: $error');
-      });
-    }
+      } else {
+        setState(() {
+          hasMore = false;
+        });
+      }
+    }).catchError((error) {
+      print('Error searching products: $error');
+    });
   }
+
+  Future<bool> showAlreadyLowStockWarning() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Uyarı'),
+          content: Text('Bu ürün zaten son 1 hafta içinde stok durumu düşük olarak belirtilmiş. Yine de bildirim yapmak istiyor musunuz?'),
+          actions: [
+            TextButton(
+              child: Text('Hayır'),
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+            ),
+            TextButton(
+              child: Text('Evet'),
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+  }
+
+  Future<bool> checkIfProductIsAlreadyLowStock(String productCode) async {
+    DateTime oneWeekAgo = DateTime.now().subtract(Duration(days: 7));
+    QuerySnapshot snapshot = await FirebaseFirestore.instance
+        .collection('lowStockRequests')
+        .where('Kodu', isEqualTo: productCode)
+        .where('requestDate', isGreaterThanOrEqualTo: oneWeekAgo)
+        .get();
+
+    return snapshot.docs.isNotEmpty;
+  }
+
+
 
   Future<void> scanBarcode() async {
     try {
@@ -258,14 +299,43 @@ class _ProductsScreenState extends State<ProductsScreen> {
           var productId = product['Kodu'] as String;
           var productDetail = product['Detay'] as String;
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PurchaseHistoryScreen(
-                productId: productId,
-                productDetail: productDetail,
-              ),
-            ),
+          // Yeni dialog ekranını açıyoruz
+          await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AlertDialog(
+                title: Text('Ne yapmak istersiniz?'),
+                content: Text('Lütfen bir seçenek seçiniz:'),
+                actions: [
+                  TextButton(
+                    child: Text('Ürün Satış Geçmişini Göster'),
+                    onPressed: () {
+                      Navigator.of(context).pop(); // Dialog'u kapat
+
+                      // Ürün satış geçmişi sayfasına yönlendir
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PurchaseHistoryScreen(
+                            productId: productId,
+                            productDetail: productDetail,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  TextButton(
+                    child: Text('Stok Durumu Düşük'),
+                    onPressed: () async {
+                      Navigator.of(context).pop(); // Dialog'u kapat
+
+                      // Sipariş geçilecek adet ve açıklama soran dialog'u aç
+                      await showLowStockDialog(product);
+                    },
+                  ),
+                ],
+              );
+            },
           );
         } else {
           print('Ürün bulunamadı.');
@@ -283,6 +353,106 @@ class _ProductsScreenState extends State<ProductsScreen> {
       );
     }
   }
+
+  Future<void> showLowStockDialog(Map<String, dynamic> productData) async {
+    TextEditingController orderQuantityController = TextEditingController();
+    TextEditingController descriptionController = TextEditingController();
+
+    // Ürünün daha önce düşük stok olarak işaretlenip işaretlenmediğini kontrol edelim
+    bool isAlreadyLowStock = await checkIfProductIsAlreadyLowStock(productData['Kodu']);
+
+    if (isAlreadyLowStock) {
+      bool proceed = await showAlreadyLowStockWarning();
+      if (!proceed) {
+        // Kullanıcı 'Hayır' dediyse, işlem yapmadan geri dön
+        return;
+      }
+    }
+
+    await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Stok Durumu Düşük'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ürün Kodu: ${productData['Kodu']}'),
+              Text('Detay: ${productData['Detay']}'),
+              TextField(
+                controller: orderQuantityController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: 'Sipariş Geçilecek Adet',
+                ),
+              ),
+              TextField(
+                controller: descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Açıklama',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: Text('İptal'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Kaydet'),
+              onPressed: () async {
+                int? orderQuantity = int.tryParse(orderQuantityController.text);
+                String description = descriptionController.text;
+
+                if (orderQuantity == null || orderQuantity <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Lütfen geçerli bir adet giriniz.')),
+                  );
+                  return;
+                }
+
+                // Kullanıcı adını al
+                User? currentUser = FirebaseAuth.instance.currentUser;
+                String? currentUserFullName;
+
+                if (currentUser != null) {
+                  var userDoc = await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(currentUser.uid)
+                      .get();
+                  currentUserFullName = userDoc.data()?['fullName'] ?? 'Unknown User';
+                }
+
+                // Verileri Firestore'a kaydet
+                await FirebaseFirestore.instance.collection('lowStockRequests').add({
+                  'Kodu': productData['Kodu'],
+                  'Detay': productData['Detay'],
+                  'Adet': '1',
+                  'orderQuantity': orderQuantity,
+                  'description': description,
+                  'requestedBy': currentUserFullName ?? 'Unknown User',
+                  'requestDate': DateTime.now(),
+                });
+
+                Navigator.of(context).pop();
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Talebiniz kaydedildi.')),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
+
+
 
   void showFilterDialog() {
     showDialog(
@@ -435,6 +605,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ],
             ),
             SizedBox(height: 20),
+            // Buraya yeni butonu ekliyoruz
+            ElevatedButton(
+              onPressed: () {
+                // 'Stok Durumu Düşük Ürünler' sayfasına yönlendiriyoruz
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => LowStockProductsScreen()),
+                );
+              },
+              child: Text('Stok Durumu Düşük Ürünler'),
+            ),
+            SizedBox(height: 20),
             Expanded(
               child: products.isEmpty && !isLoading
                   ? Center(child: Text('Veri bulunamadı'))
@@ -458,6 +640,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       bottomNavigationBar: CustomBottomBar(),
     );
   }
+
 }
 
 class FilterChipWidget extends StatefulWidget {
