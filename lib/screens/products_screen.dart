@@ -11,8 +11,8 @@ import 'low_stock_products_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'archived_orders_screen.dart';
-
-
+import 'add_product_screen.dart';
+import 'product_check_screen.dart';
 class ProductsScreen extends StatefulWidget {
   @override
   _ProductsScreenState createState() => _ProductsScreenState();
@@ -272,14 +272,58 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   Future<bool> checkIfProductIsAlreadyLowStock(String productCode) async {
     DateTime oneWeekAgo = DateTime.now().subtract(Duration(days: 7));
+    Timestamp oneWeekAgoTimestamp = Timestamp.fromDate(oneWeekAgo);
+
+    print('Checking product code: $productCode since $oneWeekAgo');
+
     QuerySnapshot snapshot = await FirebaseFirestore.instance
         .collection('lowStockRequests')
         .where('Kodu', isEqualTo: productCode)
-        .where('requestDate', isGreaterThanOrEqualTo: oneWeekAgo)
+        .where('requestDate', isGreaterThanOrEqualTo: oneWeekAgoTimestamp)
         .get();
+
+    print('Found ${snapshot.docs.length} documents');
 
     return snapshot.docs.isNotEmpty;
   }
+
+  Future<Map<String, dynamic>?> showProductSelectionDialog(List<Map<String, dynamic>> productsList) async {
+    return await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürün Seçimi'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: productsList.length,
+              itemBuilder: (context, index) {
+                var product = productsList[index];
+                return ListTile(
+                  title: Text(product['Detay'] ?? ''),
+                  subtitle: Text('Kodu: ${product['Kodu']}'),
+                  onTap: () {
+                    Navigator.of(context).pop(product);
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text('İptal'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
 
 
 
@@ -295,9 +339,34 @@ class _ProductsScreenState extends State<ProductsScreen> {
             .get();
 
         if (querySnapshot.docs.isNotEmpty) {
-          var product = querySnapshot.docs.first.data();
-          var productId = product['Kodu'] as String;
-          var productDetail = product['Detay'] as String;
+          // Mükerrer kontrolü için Map kullanıyoruz
+          Map<String, Map<String, dynamic>> uniqueProductsMap = {};
+
+          for (var doc in querySnapshot.docs) {
+            var data = doc.data() as Map<String, dynamic>;
+            // 'Kodu' alanını benzersiz anahtar olarak kullanıyoruz
+            uniqueProductsMap[data['Kodu']] = data;
+          }
+
+          List<Map<String, dynamic>> productsList = uniqueProductsMap.values.toList();
+
+          Map<String, dynamic> selectedProduct;
+
+          if (productsList.length == 1) {
+            selectedProduct = productsList.first;
+          } else {
+            // Birden fazla ürün varsa, kullanıcıya seçim yapması için dialog göster
+            var result = await showProductSelectionDialog(productsList);
+            if (result == null) {
+              // Kullanıcı seçim yapmadıysa veya dialog'u kapattıysa işlemi iptal et
+              return;
+            } else {
+              selectedProduct = result;
+            }
+          }
+
+          var productId = selectedProduct['Kodu'] as String;
+          var productDetail = selectedProduct['Detay'] as String;
 
           // Yeni dialog ekranını açıyoruz
           await showDialog(
@@ -330,7 +399,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       Navigator.of(context).pop(); // Dialog'u kapat
 
                       // Sipariş geçilecek adet ve açıklama soran dialog'u aç
-                      await showLowStockDialog(product);
+                      await showLowStockDialog(selectedProduct);
                     },
                   ),
                 ],
@@ -353,6 +422,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
       );
     }
   }
+
+
+
 
   Future<void> showLowStockDialog(Map<String, dynamic> productData) async {
     TextEditingController orderQuantityController = TextEditingController();
@@ -450,6 +522,46 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+  void showProductOptionsDialog(Map<String, dynamic> product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ne yapmak istersiniz?'),
+          content: Text('Lütfen bir seçenek seçiniz:'),
+          actions: [
+            TextButton(
+              child: Text('Ürün Satış Geçmişini Göster'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+
+                // Ürün satış geçmişi sayfasına yönlendir
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PurchaseHistoryScreen(
+                      productId: product['Kodu'],
+                      productDetail: product['Detay'],
+                    ),
+                  ),
+                );
+              },
+            ),
+            TextButton(
+              child: Text('Stok Durumu Düşük'),
+              onPressed: () async {
+                Navigator.of(context).pop(); // Dialog'u kapat
+
+                // Sipariş geçilecek adet ve açıklama soran dialog'u aç
+                await showLowStockDialog(product);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
 
 
 
@@ -535,21 +647,53 @@ class _ProductsScreenState extends State<ProductsScreen> {
             DataCell(
               Text(product['Kodu']),
               onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PurchaseHistoryScreen(
-                      productId: product['Kodu'],
-                      productDetail: product['Detay'],
-                    ),
-                  ),
-                );
+                // Ürün seçeneklerini gösteren dialog'u aç
+                showProductOptionsDialog(product);
               },
             ),
+
             DataCell(Text(product['Marka'])),
           ]);
         }).toList(),
       ),
+    );
+  }void showAddProductOptions() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Ürün Ekle'),
+          content: Text('Lütfen bir seçenek seçiniz:'),
+          actions: [
+            TextButton(
+              child: Text('Barkod ile Ürün Ekle'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+                // 'AddProductScreen' sayfasına yönlendiriyoruz
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddProductScreen(addByBarcode: true),
+                  ),
+                );
+              },
+            ),
+            TextButton(
+              child: Text('Yakın Ürün Seçerek Ekle'),
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapat
+                // 'AddProductScreen' sayfasına yönlendiriyoruz
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AddProductScreen(addByBarcode: false),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -605,7 +749,26 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ],
             ),
             SizedBox(height: 20),
-            // Buraya yeni butonu ekliyoruz
+            ElevatedButton(
+              onPressed: () {
+                // 'Ürün Ekle' seçeneklerini gösteren fonksiyonu çağırıyoruz
+                showAddProductOptions();
+              },
+              child: Text('Ürün Ekle'),
+            ),      // Buraya yeni butonu ekliyoruz
+            // 'Ürün Kontrol' butonunu ekliyoruz
+            ElevatedButton(
+              onPressed: () {
+                // 'ProductCheckScreen' sayfasına yönlendiriyoruz
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ProductCheckScreen()),
+                );
+              },
+              child: Text('Ürün Kontrol'),
+            ),
+
+
             ElevatedButton(
               onPressed: () {
                 // 'Stok Durumu Düşük Ürünler' sayfasına yönlendiriyoruz
