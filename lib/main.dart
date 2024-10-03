@@ -22,7 +22,7 @@ import 'screens/login_screen.dart';
 import 'screens/user_management_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/settings_screen.dart';
-
+import 'screens/backup_restore_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -75,6 +75,7 @@ class MyApp extends StatelessWidget {
           '/users': (context) => UsersScreen(),
           '/user_management': (context) => UserManagementScreen(),
           '/settings': (context) => SettingsScreen(),
+          '/backup_restore': (context) => BackupRestoreScreen(),
         },
       ),
     );

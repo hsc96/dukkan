@@ -22,6 +22,7 @@ import 'customer_selection_service.dart';
 import 'custom_header_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
+import 'blinking_circle.dart';
 
 class ScanScreen extends StatefulWidget {
   final Function(Map<String, dynamic>) onCustomerProcessed;
@@ -640,47 +641,33 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   Future<Map<String, dynamic>?> showQuantityInputDialog(String productCode) async {
-
-  TextEditingController quantityController = TextEditingController(text: '1');
+    TextEditingController quantityController = TextEditingController(text: '1');
     TextEditingController orderQuantityController = TextEditingController();
     TextEditingController descriptionController = TextEditingController();
     bool isLowStock = false;
+    bool isInStock = false; // Stok durumu
+    bool showAddToStockButton = false; // "Ürünü stoğa ekle" butonunu göstermek için
 
-    Future<bool> checkIfProductIsAlreadyLowStock(String productCode) async {
-      DateTime oneWeekAgo = DateTime.now().subtract(Duration(days: 7));
-      QuerySnapshot snapshot = await FirebaseFirestore.instance
-          .collection('lowStockRequests')
-          .where('Kodu', isEqualTo: productCode)
-          .where('requestDate', isGreaterThanOrEqualTo: oneWeekAgo)
+    // Ürünün stok durumunu kontrol et
+    try {
+      DocumentSnapshot<Map<String, dynamic>> productSnapshot = await FirebaseFirestore.instance
+          .collection('stoktaUrunler')
+          .doc(productCode)
           .get();
 
-      return snapshot.docs.isNotEmpty;
-    }
-
-    Future<bool> showAlreadyLowStockWarning() async {
-      return await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Uyarı'),
-            content: Text('Bu ürün zaten son 1 hafta içinde stok durumu düşük olarak belirtilmiş. Yine de bildirim yapmak istiyor musunuz?'),
-            actions: [
-              TextButton(
-                child: Text('Hayır'),
-                onPressed: () {
-                  Navigator.of(context).pop(false);
-                },
-              ),
-              TextButton(
-                child: Text('Evet'),
-                onPressed: () {
-                  Navigator.of(context).pop(true);
-                },
-              ),
-            ],
-          );
-        },
-      ) ?? false;
+      if (productSnapshot.exists) {
+        var productData = productSnapshot.data();
+        if (productData != null) {
+          isInStock = true; // Ürün stokta, çünkü `stoktaUrunler` koleksiyonunda mevcut
+        }
+      } else {
+        // Ürün stokta değil, stoğa ekle butonunu göster
+        showAddToStockButton = true;
+      }
+    } catch (e) {
+      print("Stok durumu kontrol edilirken hata oluştu: $e");
+      // Hata durumunda stoğa ekle butonunu göster
+      showAddToStockButton = true;
     }
 
     // Dialog ekranı açılıyor
@@ -695,6 +682,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Adet girişi
                     TextField(
                       controller: quantityController,
                       keyboardType: TextInputType.number,
@@ -703,6 +691,7 @@ class _ScanScreenState extends State<ScanScreen> {
                       ),
                     ),
                     SizedBox(height: 10),
+                    // Stok durumu düşük checkbox
                     Row(
                       children: [
                         Checkbox(
@@ -731,6 +720,93 @@ class _ScanScreenState extends State<ScanScreen> {
                         ),
                       ),
                     ],
+                    SizedBox(height: 20),
+                    // Stok durumu bilgisi veya stoğa ekle butonu
+                    if (isInStock)
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                          ),
+                          SizedBox(width: 10),
+                          Text(
+                            'Bu ürün stokta var',
+                            style: TextStyle(fontSize: 16, color: Colors.green),
+                          ),
+                          SizedBox(width: 10),
+                          // Yanıp sönen yeşil yuvarlak kutucuk
+                          BlinkingCircle(),
+                        ],
+                      )
+                    else if (showAddToStockButton)
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          // Stoğa ekleme işlemi
+                          bool confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (BuildContext context) {
+                              return AlertDialog(
+                                title: Text('Ürünü Stoğa Ekle'),
+                                content: Text('Bu ürünü stoğa eklemek istediğinizden emin misiniz?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop(false);
+                                    },
+                                    child: Text('Hayır'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop(true);
+                                    },
+                                    child: Text('Evet'),
+                                  ),
+                                ],
+                              );
+                            },
+                          ) ??
+                              false;
+
+                          if (confirm) {
+                            try {
+                              // Stoğa ekle (stoktaUrunler koleksiyonuna ekle)
+                              await FirebaseFirestore.instance
+                                  .collection('stoktaUrunler')
+                                  .doc(productCode)
+                                  .set({
+                                'Kodu': productCode,
+                                // Diğer ürün bilgilerini buraya ekleyebilirsiniz
+                                'Detay': 'Detay bilgisi', // Örnek veri, gerçek veriyi eklemelisiniz
+                                'Doviz': 'USD',
+                                'Fiyat': 100.0,
+                                'Marka': 'Marka A',
+                                'Barkod': '1234567890123',
+                              }, SetOptions(merge: true));
+
+                              // UI'ı güncelle
+                              setState(() {
+                                isInStock = true;
+                                showAddToStockButton = false;
+                              });
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Ürün stoğa eklendi.')),
+                              );
+                            } catch (e) {
+                              print("Stoğa ekleme hatası: $e");
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Stoğa ekleme başarısız oldu.')),
+                              );
+                            }
+                          }
+                        },
+                        icon: Icon(Icons.add),
+                        label: Text('Ürünü Stoğa Ekle'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange, // 'primary' yerine 'backgroundColor' kullanıldı
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -768,6 +844,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
 
 
+
   void _showNoConnectionDialog(String title, String content) {
     showDialog(
       context: context,
@@ -787,6 +864,8 @@ class _ScanScreenState extends State<ScanScreen> {
       },
     );
   }
+
+
 
   void _checkInitialConnectivity() async {
     try {

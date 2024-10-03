@@ -1,12 +1,16 @@
+// lib/custom_drawer.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'profile_screen.dart';
+import 'backup_restore_screen.dart'; // Yeni ekranı import ediyoruz
+// Diğer gerekli importlarınızı buraya ekleyin
+
 class CustomDrawer extends StatelessWidget {
   final User? user = FirebaseAuth.instance.currentUser;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
 
   Future<void> _signOut(BuildContext context) async {
     await _auth.signOut();
@@ -22,7 +26,6 @@ class CustomDrawer extends StatelessWidget {
     }
     return null;
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +45,7 @@ class CustomDrawer extends StatelessWidget {
               ),
             ),
           ),
+          // Mevcut Menü Öğeleri
           ListTile(
             leading: Icon(Icons.home),
             title: Text('Anasayfa'),
@@ -87,6 +91,19 @@ class CustomDrawer extends StatelessWidget {
               Navigator.pushNamed(context, '/products');
             },
           ),
+          // Yeni Yedekleme & Geri Yükleme Menü Öğesi
+          ListTile(
+            leading: Icon(Icons.backup),
+            title: Text('Yedekle & Yükle'),
+            onTap: () {
+              print('Yedekle & Yükle butonuna tıklandı');
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => BackupRestoreScreen()),
+              ); // Yeni sayfanın rotası
+            },
+          ),
+          // Kullanıcı Rolüne Göre Menü Öğeleri
           FutureBuilder<String?>(
             future: _getUserRole(),
             builder: (context, snapshot) {
@@ -129,6 +146,7 @@ class CustomDrawer extends StatelessWidget {
               return Container();
             },
           ),
+          // Çıkış Yap Menü Öğesi
           ListTile(
             leading: Icon(Icons.exit_to_app),
             title: Text('Çıkış Yap'),
