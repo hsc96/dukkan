@@ -31,11 +31,13 @@ class _CustomAppBarState extends State<CustomAppBar>
   void initState() {
     super.initState();
 
+    // Initialize the animation controller for controlling scrolling text
     _controller = AnimationController(
       duration: const Duration(seconds: 10),
       vsync: this,
     );
 
+    // Define the scrolling animation from the beginning to the end position
     _offsetAnimation = Tween<Offset>(
       begin: Offset.zero,
       end: Offset(-1.5, 0.0),
@@ -44,9 +46,12 @@ class _CustomAppBarState extends State<CustomAppBar>
       curve: Curves.linear,
     ));
 
+    // Check if the text overflows after the widget is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      print("Checking if text overflow occurs");
       _checkIfTextOverflow().then((overflow) {
         if (overflow) {
+          print("Text overflow detected. Starting initial animation.");
           setState(() {
             isScrollable = true;
           });
@@ -56,6 +61,7 @@ class _CustomAppBarState extends State<CustomAppBar>
     });
   }
 
+  // Check if the title text overflows its container
   Future<bool> _checkIfTextOverflow() async {
     final textPainter = TextPainter(
       text: TextSpan(
@@ -65,15 +71,21 @@ class _CustomAppBarState extends State<CustomAppBar>
       textDirection: TextDirection.ltr,
     );
 
+    // Calculate if the text exceeds the available width
     textPainter.layout(
         minWidth: 0, maxWidth: MediaQuery.of(context).size.width - 150);
 
-    return textPainter.didExceedMaxLines;
+    bool overflow = textPainter.didExceedMaxLines;
+    print("Text overflow: \$overflow");
+    return overflow;
   }
 
+  // Start the initial scrolling animation after a delay
   void _startInitialAnimation() {
+    print("Starting initial animation");
     _initialTimer = Timer(const Duration(seconds: 2), () {
       _controller.forward().then((_) {
+        print("Initial animation completed, resetting controller");
         Future.delayed(const Duration(seconds: 2), () {
           _controller.reset();
           _startRepeatingAnimation();
@@ -82,9 +94,12 @@ class _CustomAppBarState extends State<CustomAppBar>
     });
   }
 
+  // Start a repeating animation to continuously scroll the text
   void _startRepeatingAnimation() {
+    print("Starting repeating animation");
     _repeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       _controller.forward().then((_) {
+        print("Repeating animation cycle completed, resetting controller");
         Future.delayed(const Duration(seconds: 2), () {
           _controller.reset();
         });
@@ -94,6 +109,8 @@ class _CustomAppBarState extends State<CustomAppBar>
 
   @override
   void dispose() {
+    // Dispose animation controller and cancel timers to avoid memory leaks
+    print("Disposing animation controller and timers");
     _controller.dispose();
     _initialTimer.cancel();
     _repeatTimer.cancel();
@@ -103,8 +120,8 @@ class _CustomAppBarState extends State<CustomAppBar>
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
-    double iconSize = screenWidth * 0.07; // Dinamik icon boyutu
-    double padding = screenWidth * 0.03; // Dinamik padding
+    double iconSize = screenWidth * 0.07;
+    double padding = screenWidth * 0.03;
 
     return AppBar(
       backgroundColor: colorTheme3,
@@ -116,13 +133,16 @@ class _CustomAppBarState extends State<CustomAppBar>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+                  // Back button
                   IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.black),
                     iconSize: iconSize,
                     onPressed: () {
+                      print("Back button pressed");
                       Navigator.pop(context);
                     },
                   ),
+                  // Logo in the center
                   const CircleAvatar(
                     backgroundColor: Colors.white,
                     radius: 24.0,
@@ -135,11 +155,13 @@ class _CustomAppBarState extends State<CustomAppBar>
                       ),
                     ),
                   ),
+                  // Menu button to open the drawer
                   Builder(
                     builder: (context) => IconButton(
                       icon: const Icon(Icons.menu, color: Colors.black),
                       iconSize: iconSize,
                       onPressed: () {
+                        print("Menu button pressed");
                         Scaffold.of(context).openEndDrawer();
                       },
                     ),
@@ -150,11 +172,13 @@ class _CustomAppBarState extends State<CustomAppBar>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                // Yesterday button
                 if (widget.showYesterdayButton)
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: padding),
                     child: TextButton(
                       onPressed: () {
+                        print("Yesterday button pressed");
                         Navigator.pushNamed(context, '/yesterday');
                       },
                       style: TextButton.styleFrom(
@@ -172,6 +196,7 @@ class _CustomAppBarState extends State<CustomAppBar>
                       ),
                     ),
                   ),
+                // Divider between buttons
                 const VerticalDivider(
                   color: Colors.black,
                   thickness: 1.0,
@@ -179,6 +204,7 @@ class _CustomAppBarState extends State<CustomAppBar>
                   indent: 10.0,
                   endIndent: 10.0,
                 ),
+                // Title text, with scrolling if needed
                 Expanded(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
@@ -208,6 +234,7 @@ class _CustomAppBarState extends State<CustomAppBar>
                     ),
                   ),
                 ),
+                // Divider between buttons
                 const VerticalDivider(
                   color: Colors.black,
                   thickness: 1.0,
@@ -215,10 +242,12 @@ class _CustomAppBarState extends State<CustomAppBar>
                   indent: 10.0,
                   endIndent: 10.0,
                 ),
+                // Calendar button
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: padding),
                   child: TextButton(
                     onPressed: () {
+                      print("Calendar button pressed");
                       Navigator.pushNamed(context, '/calendar');
                     },
                     style: TextButton.styleFrom(

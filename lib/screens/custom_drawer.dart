@@ -13,16 +13,26 @@ class CustomDrawer extends StatelessWidget {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Future<void> _signOut(BuildContext context) async {
-    await _auth.signOut();
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('remember_me', false);
-    Navigator.pushReplacementNamed(context, '/login');
+    try {
+      await _auth.signOut();
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('remember_me', false);
+      Navigator.of(context).pushReplacementNamed('/login');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Çıkış yaparken bir hata oluştu: $e')),
+      );
+    }
   }
 
   Future<String?> _getUserRole() async {
-    if (user != null) {
-      DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
-      return doc['role'];
+    try {
+      if (user != null) {
+        DocumentSnapshot doc = await FirebaseFirestore.instance.collection('users').doc(user!.uid).get();
+        return doc['role'];
+      }
+    } catch (e) {
+      print('Kullanıcı rolü alınırken hata oluştu: $e');
     }
     return null;
   }
@@ -57,10 +67,7 @@ class CustomDrawer extends StatelessWidget {
             leading: Icon(Icons.person),
             title: Text('Profil'),
             onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => ProfileScreen()),
-              );
+              Navigator.pushNamed(context, '/profile');
             },
           ),
           ListTile(
@@ -97,10 +104,7 @@ class CustomDrawer extends StatelessWidget {
             title: Text('Yedekle & Yükle'),
             onTap: () {
               print('Yedekle & Yükle butonuna tıklandı');
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => BackupRestoreScreen()),
-              ); // Yeni sayfanın rotası
+              Navigator.pushNamed(context, '/backup_restore');
             },
           ),
           // Kullanıcı Rolüne Göre Menü Öğeleri
@@ -109,8 +113,18 @@ class CustomDrawer extends StatelessWidget {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return ListTile(
-                  leading: CircularProgressIndicator(),
+                  leading: SizedBox(
+                    height: 24.0,
+                    width: 24.0,
+                    child: CircularProgressIndicator(strokeWidth: 2.0),
+                  ),
                   title: Text('Loading...'),
+                );
+              }
+              if (snapshot.hasError) {
+                return ListTile(
+                  leading: Icon(Icons.error, color: Colors.red),
+                  title: Text('Hata oluştu.'),
                 );
               }
               String? role = snapshot.data;

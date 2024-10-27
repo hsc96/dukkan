@@ -178,9 +178,29 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
           var docs = snapshot.data!.docs;
 
           // Teslim tarihine göre sıralama
+          // Teslim tarihine göre sıralama
           docs.sort((a, b) {
-            DateTime? aDate = a['deliveryDate'] != null ? (a['deliveryDate'] as Timestamp).toDate() : null;
-            DateTime? bDate = b['deliveryDate'] != null ? (b['deliveryDate'] as Timestamp).toDate() : null;
+            DateTime? aDate;
+            if (a['deliveryDate'] != null) {
+              if (a['deliveryDate'] is Timestamp) {
+                aDate = (a['deliveryDate'] as Timestamp).toDate();
+              } else if (a['deliveryDate'] is String) {
+                aDate = DateTime.tryParse(a['deliveryDate']);
+              }
+            } else {
+              aDate = null;
+            }
+
+            DateTime? bDate;
+            if (b['deliveryDate'] != null) {
+              if (b['deliveryDate'] is Timestamp) {
+                bDate = (b['deliveryDate'] as Timestamp).toDate();
+              } else if (b['deliveryDate'] is String) {
+                bDate = DateTime.tryParse(b['deliveryDate']);
+              }
+            } else {
+              bDate = null;
+            }
 
             if (aDate == null && bDate == null) {
               return 0;
@@ -193,13 +213,56 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
             }
           });
 
+
           return ListView.builder(
             itemCount: docs.length,
             itemBuilder: (context, index) {
               var data = docs[index].data() as Map<String, dynamic>;
-              DateTime? deliveryDate = data['deliveryDate'] != null
-                  ? (data['deliveryDate'] as Timestamp).toDate()
-                  : null;
+
+              // deliveryDate alanını güvenli bir şekilde alıyoruz
+              DateTime? deliveryDate;
+              if (data['deliveryDate'] != null) {
+                if (data['deliveryDate'] is Timestamp) {
+                  deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
+                } else if (data['deliveryDate'] is String) {
+                  try {
+                    deliveryDate = DateTime.parse(data['deliveryDate']);
+                  } catch (e) {
+                    deliveryDate = null;
+                  }
+                }
+              } else {
+                deliveryDate = null;
+              }
+
+              // Diğer tarih alanları için de benzer işlemi yapalım
+              // Teklif Tarihi
+              String teklifTarihi;
+              if (data['Teklif Tarihi'] != null) {
+                if (data['Teklif Tarihi'] is Timestamp) {
+                  teklifTarihi = DateFormat('dd MMMM yyyy').format((data['Teklif Tarihi'] as Timestamp).toDate());
+                } else if (data['Teklif Tarihi'] is String) {
+                  teklifTarihi = data['Teklif Tarihi'];
+                } else {
+                  teklifTarihi = 'Tarih yok';
+                }
+              } else {
+                teklifTarihi = 'Tarih yok';
+              }
+
+              // Sipariş Tarihi
+              String siparisTarihi;
+              if (data['Sipariş Tarihi'] != null) {
+                if (data['Sipariş Tarihi'] is Timestamp) {
+                  siparisTarihi = DateFormat('dd MMMM yyyy').format((data['Sipariş Tarihi'] as Timestamp).toDate());
+                } else if (data['Sipariş Tarihi'] is String) {
+                  siparisTarihi = data['Sipariş Tarihi'];
+                } else {
+                  siparisTarihi = 'Tarih yok';
+                }
+              } else {
+                siparisTarihi = 'Tarih yok';
+              }
 
               return Card(
                 child: ExpansionTile(
@@ -208,7 +271,9 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Müşteri: ${data['Müşteri'] ?? 'Müşteri bilgisi yok'}'),
-                      Text('Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}'),
+                      Text(
+                        'Tahmini Teslim Tarihi: ${deliveryDate != null ? DateFormat('dd MMMM yyyy').format(deliveryDate) : 'Tarih yok'}',
+                      ),
                     ],
                   ),
                   children: [
@@ -221,8 +286,8 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
                           Text('Sipariş No: ${data['Sipariş Numarası'] ?? 'Sipariş numarası yok'}'),
                           Text('Adet Fiyatı: ${data['Adet Fiyatı'] ?? 'Adet fiyatı yok'}'),
                           Text('Adet: ${data['Adet'] ?? 'Adet yok'}'),
-                          Text('Teklif Tarihi: ${data['Teklif Tarihi'] ?? 'Tarih yok'}'),
-                          Text('Sipariş Tarihi: ${data['Sipariş Tarihi'] ?? 'Tarih yok'}'),
+                          Text('Teklif Tarihi: $teklifTarihi'),
+                          Text('Sipariş Tarihi: $siparisTarihi'),
                           Text('İşleme Alan: ${data['islemeAlan'] ?? 'admin'}'),
                         ],
                       ),
@@ -245,6 +310,9 @@ class _AwaitedProductsScreenState extends State<AwaitedProductsScreen> {
               );
             },
           );
+
+
+
         },
       ),
       bottomNavigationBar: CustomBottomBar(),

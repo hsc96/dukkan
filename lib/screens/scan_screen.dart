@@ -108,23 +108,22 @@ class _ScanScreenState extends State<ScanScreen> {
       }
     });
 
-    // Firestore Stream dinleyici ekleyin
     FirebaseFirestore.instance
-        .collection('temporarySelections')
-        .doc(widget.documentId) // Use the documentId passed to the widget
-        .snapshots()
-        .listen((snapshot) {
-      if (snapshot.exists) {
-        var data = snapshot.data();
-        if (data != null && mounted) {
-          setState(() {
-            selectedCustomer = data['customerName'];  // Seçili müşteri bilgilerini güncelle
-            scannedProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);  // Ürünleri güncelle
-            updateTotalAndVat();  // Toplam ve KDV hesaplamalarını güncelle
-          });
-        }
-      }
-    });
+         .collection('temporarySelections')
+         .doc(widget.documentId)
+         .snapshots()
+         .listen((snapshot) {
+       if (snapshot.exists) {
+         var data = snapshot.data();
+         if (data != null && mounted) {
+           setState(() {
+             selectedCustomer = data['customerName'];  // Seçili müşteri bilgilerini güncelle
+             scannedProducts = List<Map<String, dynamic>>.from(data['products'] ?? []);  // Ürünleri güncelle
+             updateTotalAndVat();  // Toplam ve KDV hesaplamalarını güncelle
+           });
+         }
+       }
+     });
   }
 
 
@@ -886,7 +885,7 @@ class _ScanScreenState extends State<ScanScreen> {
 
 
   Future<void> updateProductPricesForCustomer() async {
-      if (selectedCustomer == null) return;
+    if (selectedCustomer == null) return;
 
     for (var i = 0; i < scannedProducts.length; i++) {
       var productData = scannedProducts[i];
@@ -1262,16 +1261,17 @@ class _ScanScreenState extends State<ScanScreen> {
       double price = double.tryParse(scannedProducts[index]['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       scannedProducts[index]['Adet'] = quantity;
       scannedProducts[index]['Toplam Fiyat'] = (adet * price).toStringAsFixed(2);
+    });
 
-      // Güncellenmiş veriyi Firestore'a yazdır
-      FirebaseFirestore.instance.collection('temporarySelections').doc(widget.documentId).update({
-        'products': scannedProducts,
-      });
+    // Sadece değişen ürünü Firestore'da güncelle
+    FirebaseFirestore.instance.collection('temporarySelections').doc(widget.documentId).update({
+      'products': scannedProducts,
     });
 
     // Toplam ve KDV'yi güncelle
     updateTotalAndVat();
   }
+
 
   void removeProduct(int index) {
     showDialog(
@@ -1350,42 +1350,14 @@ class _ScanScreenState extends State<ScanScreen> {
     print("Ara Toplam: $subtotal TL, KDV: $vat TL, Genel Toplam: $grandTotal TL");
 
     setState(() {
-      // Mevcut scannedProducts listesinde toplam bilgilerini kaldır
-      scannedProducts.removeWhere((product) =>
-      product['Adet Fiyatı'] == 'Toplam Tutar' ||
-          product['Adet Fiyatı'] == 'KDV %20' ||
-          product['Adet Fiyatı'] == 'Genel Toplam'
-      );
-
-      // Yeni toplamları ekle
-      scannedProducts.addAll([
-        {
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'Toplam Tutar',
-          'Toplam Fiyat': subtotal.toStringAsFixed(2),
-        },
-        {
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'KDV %20',
-          'Toplam Fiyat': vat.toStringAsFixed(2),
-        },
-        {
-          'Kodu': '',
-          'Detay': '',
-          'Adet': '',
-          'Adet Fiyatı': 'Genel Toplam',
-          'Toplam Fiyat': grandTotal.toStringAsFixed(2),
-        },
-      ]);
+      // scannedProducts listesine dokunmayın
     });
 
     // Firestore güncellemesi
     updateTotalInFirestore(subtotal, vat, grandTotal);
   }
+
+
 
 
 
@@ -1530,108 +1502,159 @@ class _ScanScreenState extends State<ScanScreen> {
             return AlertDialog(
               title: Text('Sipariş Bilgileri'),
               content: SingleChildScrollView(
-                child: ListBody(
-                  children: <Widget>[
-                    Text('Ürünü Kim Aldı:'),
-                    RadioListTile<String>(
-                      title: Text('Müşterisi'),
-                      value: 'Müşterisi',
-                      groupValue: whoTook,
-                      onChanged: (value) {
-                        setState(() {
-                          whoTook = value;
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: Text('Kendi Firması'),
-                      value: 'Kendi Firması',
-                      groupValue: whoTook,
-                      onChanged: (value) {
-                        setState(() {
-                          whoTook = value;
-                        });
-                      },
-                    ),
-                    if (whoTook == 'Müşterisi')
-                      Column(
-                        children: [
-                          TextField(
-                            decoration: InputDecoration(labelText: 'Müşteri İsmi'),
-                            controller: recipientController,
-                          ),
-                          TextField(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: [
+                    DataColumn(label: Text('Kodu')),
+                    DataColumn(label: Text('Detay')),
+                    DataColumn(label: Text('Adet')),
+                    DataColumn(label: Text('Adet Fiyatı')),
+                    DataColumn(label: Text('İskonto')),
+                    DataColumn(label: Text('Toplam Fiyat')),
+                    DataColumn(label: Text('Düzenle')),
+                  ],
+                  rows: [
+                    // Ürün satırları
+                    ...scannedProducts.map((product) {
+                      int index = scannedProducts.indexOf(product);
+                      return DataRow(cells: [
+                        // Kodu
+                        DataCell(Text(product['Kodu']?.toString() ?? '')),
+                        // Detay
+                        DataCell(Text(product['Detay']?.toString() ?? '')),
+                        // Adet
+                        DataCell(
+                          _isConnected
+                              ? TextField(
+                            keyboardType: TextInputType.number,
                             decoration: InputDecoration(
-                                labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
-                            controller: contactPersonController,
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (value) {
+                              // Ürün miktarını güncelle
+                              scannedProducts[index]['Adet'] = value;
+                            },
+                            onSubmitted: (value) {
+                              // Güncellemeyi yap
+                              updateQuantity(index, value);
+                            },
+                            controller: TextEditingController(
+                              text: scannedProducts[index]['Adet']?.toString() ?? '',
+                            ),
+                          )
+                              : GestureDetector(
+                            onTap: () {
+                              // İnternet yoksa, uyarı göster
+                              _showNoConnectionDialog('Bağlantı Sorunu',
+                                  'İnternet bağlantısı yok, miktar güncellenemiyor.');
+                            },
+                            child: Text(
+                              scannedProducts[index]['Adet']?.toString() ?? '0',
+                              style: TextStyle(fontSize: 16.0, color: Colors.grey),
+                            ),
                           ),
-                        ],
-                      ),
-                    if (whoTook == 'Kendi Firması')
-                      TextField(
-                        decoration: InputDecoration(labelText: 'Teslim Alan Çalışan İsmi'),
-                        controller: recipientController,
-                      ),
-                    SizedBox(height: 20),
-                    Text('Sipariş Şekli:'),
-                    RadioListTile<String>(
-                      title: Text('Mail'),
-                      value: 'Mail',
-                      groupValue: orderMethod,
-                      onChanged: (value) {
-                        setState(() {
-                          orderMethod = value;
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: Text('Whatsapp'),
-                      value: 'Whatsapp',
-                      groupValue: orderMethod,
-                      onChanged: (value) {
-                        setState(() {
-                          orderMethod = value;
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: Text('Telefon'),
-                      value: 'Telefon',
-                      groupValue: orderMethod,
-                      onChanged: (value) {
-                        setState(() {
-                          orderMethod = value;
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: Text('Dükkanda Sipariş'),
-                      value: 'Dükkanda Sipariş',
-                      groupValue: orderMethod,
-                      onChanged: (value) {
-                        setState(() {
-                          orderMethod = value;
-                        });
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: Text('Diğer'),
-                      value: 'Diğer',
-                      groupValue: orderMethod,
-                      onChanged: (value) {
-                        setState(() {
-                          orderMethod = value;
-                        });
-                      },
-                    ),
-                    if (orderMethod == 'Diğer')
-                      TextField(
-                        controller: otherMethodController,
-                        decoration: InputDecoration(labelText: 'Sipariş Şekli (Diğer)'),
-                      ),
+                        ),
+                        // Adet Fiyatı
+                        DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                        // İskonto
+                        DataCell(Text(product['İskonto']?.toString() ?? '')),
+                        // Toplam Fiyat
+                        DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                        // Düzenle
+                        DataCell(
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.edit, color: Colors.grey),
+                                onPressed: () {
+                                  if (_isConnected) {
+                                    setState(() {
+                                      isEditing = true;
+                                      editingIndex = index;
+                                      originalProductData = Map<String, dynamic>.from(product);
+                                      quantityController.text = product['Adet']?.toString() ?? '';
+                                    });
+                                  } else {
+                                    // İnternet yoksa uyarı göster
+                                    _showNoConnectionDialog('Bağlantı Sorunu',
+                                        'İnternet bağlantısı yok, düzenleme yapılamıyor.');
+                                  }
+                                },
+                              ),
+                              if (isEditing && editingIndex == index)
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(Icons.check, color: Colors.green),
+                                      onPressed: () {
+                                        if (_isConnected) {
+                                          handleEditSubmit(index);
+                                        } else {
+                                          // İnternet yoksa uyarı göster
+                                          _showNoConnectionDialog('Bağlantı Sorunu',
+                                              'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () {
+                                        if (_isConnected) {
+                                          removeProduct(index);
+                                        } else {
+                                          // İnternet yoksa uyarı göster
+                                          _showNoConnectionDialog('Bağlantı Sorunu',
+                                              'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
+                                        }
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: Icon(Icons.close, color: Colors.red),
+                                      onPressed: () {
+                                        handleEditCancel(index);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      ]);
+                    }).toList(),
+                    // Toplam satırları
+                    DataRow(cells: [
+                      DataCell(Text('')),
+                      DataCell(Text('Toplam Tutar')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text(subtotal.toStringAsFixed(2))),
+                      DataCell(Text('')),
+                    ]),
+                    DataRow(cells: [
+                      DataCell(Text('')),
+                      DataCell(Text('KDV %20')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text(vat.toStringAsFixed(2))),
+                      DataCell(Text('')),
+                    ]),
+                    DataRow(cells: [
+                      DataCell(Text('')),
+                      DataCell(Text('Genel Toplam')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text('')),
+                      DataCell(Text(grandTotal.toStringAsFixed(2))),
+                      DataCell(Text('')),
+                    ]),
                   ],
                 ),
               ),
+
+
+
               actions: <Widget>[
                 TextButton(
                   child: Text('İptal'),
@@ -2231,12 +2254,9 @@ class _ScanScreenState extends State<ScanScreen> {
                             DataColumn(label: Text('Düzenle')),
                           ],
                           rows: [
+                            // Ürün satırları
                             ...scannedProducts.map((product) {
                               int index = scannedProducts.indexOf(product);
-                              bool isTotalRow = product['Adet Fiyatı']?.toString() == 'Toplam Tutar' ||
-                                  product['Adet Fiyatı']?.toString() == 'KDV %20' ||
-                                  product['Adet Fiyatı']?.toString() == 'Genel Toplam';
-
                               return DataRow(cells: [
                                 DataCell(Text(product['Kodu']?.toString() ?? '')),
                                 DataCell(Text(product['Detay']?.toString() ?? '')),
@@ -2270,14 +2290,11 @@ class _ScanScreenState extends State<ScanScreen> {
                                     ),
                                   ),
                                 ),
-
                                 DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
                                 DataCell(Text(product['İskonto']?.toString() ?? '')),
                                 DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
                                 DataCell(
-                                  isTotalRow
-                                      ? Container()
-                                      : Row(
+                                  Row(
                                     children: [
                                       IconButton(
                                         icon: Icon(Icons.edit, color: Colors.grey),
@@ -2330,8 +2347,6 @@ class _ScanScreenState extends State<ScanScreen> {
                                         ),
                                     ],
                                   ),
-
-
                                 ),
                               ]);
                             }).toList(),
@@ -2368,170 +2383,11 @@ class _ScanScreenState extends State<ScanScreen> {
                       ),
                       // ... Diğer kodlar ...
 
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 5.0),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            ElevatedButton(
-                              onPressed: () async {
-                                if (_isConnected) {
-                                  // Normal 'Teklif Ver' işlemleri...
-                                  bool shouldProceed = await showDialog(
-                                    context: context,
-                                    builder: (BuildContext context) {
-                                      return AlertDialog(
-                                        title: Text('Teklif Oluştur'),
-                                        content: Text('Teklif oluşturmak istediğinizden emin misiniz?'),
-                                        actions: [
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.of(context).pop(false); // İşlemi iptal et
-                                            },
-                                            child: Text('Hayır'),
-                                          ),
-                                          TextButton(
-                                            onPressed: () {
-                                              Navigator.of(context).pop(true); // İşleme devam et
-                                            },
-                                            child: Text('Evet'),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  );
-
-                                  if (shouldProceed && mounted) {
-                                    // Teklif oluşturma işlemleri...
-                                    try {
-                                      // Teklif oluşturma işlemi
-                                      DocumentReference quoteRef = await generateQuote();
-
-                                      // Sayfa verilerini temizle
-                                      clearScreen();
-
-                                      // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
-                                      await Future.delayed(Duration(seconds: 1));
-
-                                      if (mounted) {
-                                        // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
-                                        DocumentSnapshot quoteSnapshot = await quoteRef.get();
-                                        String quoteNumber = quoteSnapshot['quoteNumber'];
-                                        String customerName = quoteSnapshot['customerName'];
-
-                                        // Bilgi mesajını sayfa tamamen yenilendikten sonra göster
-                                        await showDialog(
-                                          context: context,
-                                          builder: (BuildContext context) {
-                                            return AlertDialog(
-                                              title: Text('Teklif Oluşturuldu'),
-                                              content: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text('Teklif No: $quoteNumber'),
-                                                  Text('Müşteri: $customerName'),
-                                                  SizedBox(height: 8),
-                                                  Text('Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
-                                                ],
-                                              ),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () {
-                                                    Navigator.of(context).pop(); // Dialog'u kapat
-                                                  },
-                                                  child: Text('Tamam'),
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        );
-                                      }
-                                    } catch (e) {
-                                      if (mounted) {
-                                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Teklif oluşturulurken bir hata oluştu: $e'),
-                                              duration: Duration(seconds: 5),
-                                            ),
-                                          );
-                                        });
-                                      }
-                                    }
-                                  }
-                                } else {
-                                  // İnternet yoksa uyarı göster
-                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
-                                }
-                              },
-                              child: Text('Teklif Ver'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () async {
-                                if (_isConnected) {
-                                  bool shouldProceed = await showProcessingDialog();
-
-                                  if (shouldProceed) {
-                                    await processSale();
-                                    await clearSelections();
-                                    clearScreen(); // Ekranı temizle
-                                  } else {
-                                    print('İşlem iptal edildi, veriler silinmedi.');
-                                  }
-                                } else {
-                                  // İnternet yoksa uyarı göster
-                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
-                                }
-                              },
-                              child: Text('Hesaba İşle'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () async {
-                                if (_isConnected) {
-                                  await processCashPayment();
-                                  await clearSelections();
-                                  clearScreen(); // Ekranı temizle
-                                } else {
-                                  // İnternet yoksa uyarı göster
-                                  _showNoConnectionDialog('Bağlantı Sorunu', 'İnternet bağlantısı yok, lütfen internetinizi kontrol edin.');
-                                }
-                              },
-                              child: Text('Nakit Tahsilat'),
-                            ),
-
-                            ElevatedButton(
-                              onPressed: _isConnected
-                                  ? saveAsPDF
-                                  : () {
-                                // İnternet yoksa uyarı göster
-                                showDialog(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return AlertDialog(
-                                      title: Text('Bağlantı Sorunu'),
-                                      content: Text('İnternet bağlantısı yok, lütfen internetinizi kontrol edin.'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).pop(); // Dialog'u kapat
-                                          },
-                                          child: Text('Tamam'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
-                              },
-                              child: Text('PDF\'e Dönüştür'),
-                            ),
-                          ],
-                        ),
-                      ),
-
-
+                      // Butonlar ve diğer bileşenler
                     ],
                   ),
                 );
+
               },
             ),
           ),

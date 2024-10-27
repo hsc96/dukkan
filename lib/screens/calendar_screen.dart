@@ -27,36 +27,35 @@ class _CalendarScreenState extends State<CalendarScreen> {
     _fetchSalesDataForSelectedDay(_focusedDay);
   }
 
-  void _fetchPendingProducts() async {
+  Future<void> _fetchPendingProducts() async {
     var querySnapshot =
     await FirebaseFirestore.instance.collection('pendingProducts').get();
 
-    setState(() {
-      _events.clear();
-      for (var doc in querySnapshot.docs) {
-        var data = doc.data() as Map<String, dynamic>;
-        DateTime? deliveryDate;
-        try {
-          if (data['deliveryDate'] != null) {
-            deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
-          }
-        } catch (e) {
-          print("Error converting deliveryDate: $e");
-          continue;
+    Map<DateTime, List<Map<String, dynamic>>> events = {};
+    for (var doc in querySnapshot.docs) {
+      var data = doc.data() as Map<String, dynamic>;
+      DateTime? deliveryDate;
+      try {
+        if (data['deliveryDate'] != null) {
+          deliveryDate = (data['deliveryDate'] as Timestamp).toDate();
         }
-        if (deliveryDate != null) {
-          DateTime deliveryDateOnly =
-          DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
-          if (_events[deliveryDateOnly] == null) {
-            _events[deliveryDateOnly] = [];
-          }
-          _events[deliveryDateOnly]!.add(data);
-        }
+      } catch (e) {
+        print("Error converting deliveryDate: $e");
+        continue;
       }
+      if (deliveryDate != null) {
+        DateTime deliveryDateOnly =
+        DateTime(deliveryDate.year, deliveryDate.month, deliveryDate.day);
+        events.putIfAbsent(deliveryDateOnly, () => []).add(data);
+      }
+    }
+
+    setState(() {
+      _events = events;
     });
   }
 
-  void _fetchSalesDataForSelectedDay(DateTime selectedDay) async {
+  Future<void> _fetchSalesDataForSelectedDay(DateTime selectedDay) async {
     String formattedDate = DateFormat('dd.MM.yyyy').format(selectedDay);
 
     var salesSnapshot = await FirebaseFirestore.instance
@@ -67,44 +66,38 @@ class _CalendarScreenState extends State<CalendarScreen> {
     var usersSnapshot =
     await FirebaseFirestore.instance.collection('users').get();
 
-    Map<String, String> userIdToNameMap = {};
-    for (var userDoc in usersSnapshot.docs) {
-      var userData = userDoc.data();
-      userIdToNameMap[userDoc.id] =
-          userData['fullName'] ?? 'Bilinmeyen Satış Elemanı';
+    Map<String, String> userIdToNameMap = {
+      for (var userDoc in usersSnapshot.docs)
+        userDoc.id: userDoc.data()['fullName'] ?? 'Bilinmeyen Satış Elemanı'
+    };
+
+    Map<String, List<Map<String, dynamic>>> salesForSelectedDay = {};
+    for (var saleDoc in salesSnapshot.docs) {
+      var saleData = saleDoc.data();
+
+      String salesmanName =
+          userIdToNameMap[saleData['userId']] ?? 'Bilinmeyen Satış Elemanı';
+
+      List<Map<String, dynamic>> products =
+      (saleData['products'] as List<dynamic>).map((product) {
+        return {
+          'Detay': product['Detay'] ?? 'Ürün İsmi Yok',
+          'Adet Fiyatı': _parseDouble(product['Adet Fiyatı']),
+          'Adet': _parseInt(product['Adet']),
+          'Toplam Fiyat': _parseDouble(product['Toplam Fiyat']),
+          'salesmanName': salesmanName,
+        };
+      }).where((product) =>
+      !product['Detay'].toString().toLowerCase().contains('toplam') &&
+          product['Adet Fiyatı'] != 0.0).toList();
+
+      String customerName = saleData['customerName'] ?? 'Bilinmeyen Müşteri';
+
+      salesForSelectedDay.putIfAbsent(customerName, () => []).addAll(products);
     }
 
     setState(() {
-      _salesForSelectedDay.clear();
-      for (var saleDoc in salesSnapshot.docs) {
-        var saleData = saleDoc.data();
-
-        String salesmanName =
-            userIdToNameMap[saleData['userId']] ?? 'Bilinmeyen Satış Elemanı';
-
-        List<Map<String, dynamic>> products =
-        (saleData['products'] as List<dynamic>).map((product) {
-          return {
-            'Detay': product['Detay'] ?? 'Ürün İsmi Yok',
-            'Adet Fiyatı': _parseDouble(product['Adet Fiyatı']),
-            'Adet': _parseInt(product['Adet']),
-            'Toplam Fiyat': _parseDouble(product['Toplam Fiyat']),
-            'salesmanName': salesmanName,
-          };
-        }).toList();
-
-        products.removeWhere((product) =>
-        product['Detay'].toString().toLowerCase().contains('toplam') ||
-            product['Adet Fiyatı'] == 0.0);
-
-        String customerName = saleData['customerName'] ?? 'Bilinmeyen Müşteri';
-
-        if (_salesForSelectedDay.containsKey(customerName)) {
-          _salesForSelectedDay[customerName]!.addAll(products);
-        } else {
-          _salesForSelectedDay[customerName] = products;
-        }
-      }
+      _salesForSelectedDay = salesForSelectedDay;
     });
   }
 
@@ -132,11 +125,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double toplamSatisTutari = 0.0;
-    _salesForSelectedDay.values.forEach((products) {
-      products.forEach((product) {
-        toplamSatisTutari += product['Toplam Fiyat'];
-      });
+    double toplamSatisTutari = _salesForSelectedDay.values.fold(0.0, (sum, products) {
+      return sum + products.fold(0.0, (productSum, product) => productSum + product['Toplam Fiyat']);
     });
 
     return Scaffold(
@@ -158,8 +148,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   );
                   if (picked != null && picked != _focusedDay) {
                     setState(() {
-                      _focusedDay = DateTime(
-                          picked.year, _focusedDay.month, _focusedDay.day);
+                      _focusedDay = DateTime(picked.year, picked.month, picked.day);
                       _fetchSalesDataForSelectedDay(_focusedDay);
                     });
                   }
@@ -272,10 +261,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 ),
                 Expanded(
                   child: _showPendingProducts
-                      ? ListView(
-                    children: _getEventsForDay(
+                      ? ListView.builder(
+                    itemCount: _getEventsForDay(
                         _selectedDay ?? _focusedDay)
-                        .map((event) {
+                        .length,
+                    itemBuilder: (context, index) {
+                      var event = _getEventsForDay(
+                          _selectedDay ?? _focusedDay)[index];
                       return ListTile(
                         title: Text(
                             event['Detay'] ?? 'Detay bilgisi yok'),
@@ -302,14 +294,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           ],
                         ),
                       );
-                    }).toList(),
+                    },
                   )
-                      : ListView(
-                    children:
-                    _salesForSelectedDay.entries.map((entry) {
-                      String customerName = entry.key;
+                      : ListView.builder(
+                    itemCount: _salesForSelectedDay.length,
+                    itemBuilder: (context, index) {
+                      String customerName =
+                      _salesForSelectedDay.keys.elementAt(index);
                       List<Map<String, dynamic>> products =
-                          entry.value;
+                      _salesForSelectedDay[customerName]!;
 
                       double totalAmount = products.fold(
                           0.0,
@@ -331,8 +324,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 children: [
                                   Text(
                                       'Adet Fiyatı: ${product['Adet Fiyatı'].toStringAsFixed(2)} TL'),
-                                  Text(
-                                      'Adet: ${product['Adet']}'),
+                                  Text('Adet: ${product['Adet']}'),
                                   Text(
                                       'Toplam Fiyat: ${product['Toplam Fiyat'].toStringAsFixed(2)} TL'),
                                   Text(
@@ -343,7 +335,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           }).toList(),
                         ),
                       );
-                    }).toList(),
+                    },
                   ),
                 ),
               ],
