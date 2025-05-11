@@ -23,6 +23,7 @@ import 'custom_header_screen.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import 'blinking_circle.dart';
+import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
 
 class ScanScreen extends StatefulWidget {
   final Function(Map<String, dynamic>) onCustomerProcessed;
@@ -1482,228 +1483,221 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 
+  // _ScanScreenState sınıfının içine bu fonksiyonu ekleyin veya güncelleyin:
+
   Future<bool> showProcessingDialog() async {
-    String? whoTook;
-    String? recipient;
-    String? contactPerson;
-    String? orderMethod;
+    // Dialog içindeki state'i yönetmek için değişkenler
+    String? whoTookValue; // "Müşterisi" veya "Kendi Firması"
     TextEditingController recipientController = TextEditingController();
     TextEditingController contactPersonController = TextEditingController();
+    String? orderMethodValue; // "Telefon", "Mail", "Yerinde", "Diğer"
     TextEditingController otherMethodController = TextEditingController();
+    bool isSaved = false;
 
-    bool isSaved = false; // Save status
+    // Müşteri seçilmemişse veya ürün yoksa dialogu gösterme veya uyarı ver
+    if (selectedCustomer == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lütfen bir müşteri seçin.')),
+        );
+      }
+      return false;
+    }
+    if (scannedProducts.where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty).toList().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Listede ürün bulunmuyor.')),
+        );
+      }
+      return false;
+    }
 
-    await showDialog<void>(
+    return await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: false, // Dışarı tıklayınca kapanmasın
       builder: (BuildContext context) {
+        // AlertDialog'un içeriğini stateful yapmak için StatefulBuilder kullanıyoruz
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
+          builder: (BuildContext context, StateSetter setStateDialog) {
             return AlertDialog(
-              title: Text('Sipariş Bilgileri'),
+              title: Text('Sipariş Bilgileri ve Onay'),
               content: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  columns: [
-                    DataColumn(label: Text('Kodu')),
-                    DataColumn(label: Text('Detay')),
-                    DataColumn(label: Text('Adet')),
-                    DataColumn(label: Text('Adet Fiyatı')),
-                    DataColumn(label: Text('İskonto')),
-                    DataColumn(label: Text('Toplam Fiyat')),
-                    DataColumn(label: Text('Düzenle')),
-                  ],
-                  rows: [
-                    // Ürün satırları
-                    ...scannedProducts.map((product) {
-                      int index = scannedProducts.indexOf(product);
-                      return DataRow(cells: [
-                        // Kodu
-                        DataCell(Text(product['Kodu']?.toString() ?? '')),
-                        // Detay
-                        DataCell(Text(product['Detay']?.toString() ?? '')),
-                        // Adet
-                        DataCell(
-                          _isConnected
-                              ? TextField(
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(),
-                            ),
-                            onChanged: (value) {
-                              // Ürün miktarını güncelle
-                              scannedProducts[index]['Adet'] = value;
-                            },
-                            onSubmitted: (value) {
-                              // Güncellemeyi yap
-                              updateQuantity(index, value);
-                            },
-                            controller: TextEditingController(
-                              text: scannedProducts[index]['Adet']?.toString() ?? '',
-                            ),
-                          )
-                              : GestureDetector(
-                            onTap: () {
-                              // İnternet yoksa, uyarı göster
-                              _showNoConnectionDialog('Bağlantı Sorunu',
-                                  'İnternet bağlantısı yok, miktar güncellenemiyor.');
-                            },
-                            child: Text(
-                              scannedProducts[index]['Adet']?.toString() ?? '0',
-                              style: TextStyle(fontSize: 16.0, color: Colors.grey),
-                            ),
-                          ),
+                child: ConstrainedBox( // Dialog içeriğinin boyutunu sınırlamak için
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.7, // Ekran yüksekliğinin %70'i
+                    maxWidth: MediaQuery.of(context).size.width * 0.9, // Ekran genişliğinin %90'ı
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Müşteri: $selectedCustomer', style: TextStyle(fontWeight: FontWeight.bold)),
+                      SizedBox(height: 10),
+                      Text('Ürünler:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      // Ürün Tablosu
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          columns: [
+                            DataColumn(label: Text('Kodu')),
+                            DataColumn(label: Text('Detay')),
+                            DataColumn(label: Text('Adet')),
+                            DataColumn(label: Text('Adet Fiyatı')),
+                            DataColumn(label: Text('İskonto')),
+                            DataColumn(label: Text('Toplam Fiyat')),
+                            // Düzenle sütununu bu dialogda göstermeyebiliriz, veya isterseniz ekleyebilirsiniz.
+                            // DataColumn(label: Text('Düzenle')),
+                          ],
+                          rows: [
+                            ...scannedProducts.where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty).map((product) {
+                              // int index = scannedProducts.indexOf(product); // Bu dialogda düzenleme olmayacaksa index gereksiz
+                              return DataRow(cells: [
+                                DataCell(Text(product['Kodu']?.toString() ?? '')),
+                                DataCell(Text(product['Detay']?.toString() ?? '')),
+                                DataCell(Text(product['Adet']?.toString() ?? '')),
+                                DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
+                                DataCell(Text(product['İskonto']?.toString() ?? '')),
+                                DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
+                                // DataCell( /* Düzenle ikonları buraya gelebilir */ ),
+                              ]);
+                            }).toList(),
+                            // Toplam Satırları
+                            DataRow(cells: [
+                              DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                              DataCell(Text('Toplam Tutar', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataCell(Text(subtotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold))),
+                              // DataCell(Text('')),
+                            ]),
+                            DataRow(cells: [
+                              DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                              DataCell(Text('KDV %20', style: TextStyle(fontWeight: FontWeight.bold))),
+                              DataCell(Text(vat.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold))),
+                              // DataCell(Text('')),
+                            ]),
+                            DataRow(cells: [
+                              DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                              DataCell(Text('Genel Toplam', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red))),
+                              DataCell(Text(grandTotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red))),
+                              // DataCell(Text('')),
+                            ]),
+                          ],
                         ),
-                        // Adet Fiyatı
-                        DataCell(Text(product['Adet Fiyatı']?.toString() ?? '')),
-                        // İskonto
-                        DataCell(Text(product['İskonto']?.toString() ?? '')),
-                        // Toplam Fiyat
-                        DataCell(Text(product['Toplam Fiyat']?.toString() ?? '')),
-                        // Düzenle
-                        DataCell(
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: Icon(Icons.edit, color: Colors.grey),
-                                onPressed: () {
-                                  if (_isConnected) {
-                                    setState(() {
-                                      isEditing = true;
-                                      editingIndex = index;
-                                      originalProductData = Map<String, dynamic>.from(product);
-                                      quantityController.text = product['Adet']?.toString() ?? '';
-                                    });
-                                  } else {
-                                    // İnternet yoksa uyarı göster
-                                    _showNoConnectionDialog('Bağlantı Sorunu',
-                                        'İnternet bağlantısı yok, düzenleme yapılamıyor.');
-                                  }
-                                },
-                              ),
-                              if (isEditing && editingIndex == index)
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: Icon(Icons.check, color: Colors.green),
-                                      onPressed: () {
-                                        if (_isConnected) {
-                                          handleEditSubmit(index);
-                                        } else {
-                                          // İnternet yoksa uyarı göster
-                                          _showNoConnectionDialog('Bağlantı Sorunu',
-                                              'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
-                                        }
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () {
-                                        if (_isConnected) {
-                                          removeProduct(index);
-                                        } else {
-                                          // İnternet yoksa uyarı göster
-                                          _showNoConnectionDialog('Bağlantı Sorunu',
-                                              'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
-                                        }
-                                      },
-                                    ),
-                                    IconButton(
-                                      icon: Icon(Icons.close, color: Colors.red),
-                                      onPressed: () {
-                                        handleEditCancel(index);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                            ],
-                          ),
+                      ),
+                      SizedBox(height: 20),
+                      Text('Ek Sipariş Bilgileri:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      // Ürünü Kim Aldı?
+                      DropdownButtonFormField<String>(
+                        decoration: InputDecoration(labelText: 'Ürünü Kim Aldı?'),
+                        value: whoTookValue,
+                        items: ['Müşterisi', 'Kendi Firması'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setStateDialog(() {
+                            whoTookValue = newValue;
+                            if (newValue != 'Müşterisi') {
+                              contactPersonController.clear(); // Müşterisi değilse ilgili kişi alanını temizle
+                            }
+                          });
+                        },
+                        validator: (value) => value == null ? 'Bu alan zorunludur' : null,
+                      ),
+                      // Teslim Alan Kişi/Firma Adı
+                      TextFormField(
+                        controller: recipientController,
+                        decoration: InputDecoration(labelText: 'Teslim Alan Kişi/Firma Adı'),
+                        validator: (value) => (value == null || value.isEmpty) ? 'Bu alan zorunludur' : null,
+                      ),
+                      // Firmadan Bilgilendirilecek Kişi İsmi (Eğer "Müşterisi" seçildiyse)
+                      if (whoTookValue == 'Müşterisi')
+                        TextFormField(
+                          controller: contactPersonController,
+                          decoration: InputDecoration(labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
+                          validator: (value) {
+                            if (whoTookValue == 'Müşterisi' && (value == null || value.isEmpty)) {
+                              return 'Bu alan zorunludur';
+                            }
+                            return null;
+                          },
                         ),
-                      ]);
-                    }).toList(),
-                    // Toplam satırları
-                    DataRow(cells: [
-                      DataCell(Text('')),
-                      DataCell(Text('Toplam Tutar')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text(subtotal.toStringAsFixed(2))),
-                      DataCell(Text('')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('')),
-                      DataCell(Text('KDV %20')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text(vat.toStringAsFixed(2))),
-                      DataCell(Text('')),
-                    ]),
-                    DataRow(cells: [
-                      DataCell(Text('')),
-                      DataCell(Text('Genel Toplam')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text('')),
-                      DataCell(Text(grandTotal.toStringAsFixed(2))),
-                      DataCell(Text('')),
-                    ]),
-                  ],
+                      // Sipariş Şekli
+                      DropdownButtonFormField<String>(
+                        decoration: InputDecoration(labelText: 'Sipariş Şekli'),
+                        value: orderMethodValue,
+                        items: ['Telefon', 'Mail', 'Yerinde', 'Diğer'].map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setStateDialog(() {
+                            orderMethodValue = newValue;
+                            if (newValue != 'Diğer') {
+                              otherMethodController.clear(); // Diğer değilse ilgili alanı temizle
+                            }
+                          });
+                        },
+                        validator: (value) => value == null ? 'Bu alan zorunludur' : null,
+                      ),
+                      // Diğer Sipariş Şekli (Eğer "Diğer" seçildiyse)
+                      if (orderMethodValue == 'Diğer')
+                        TextFormField(
+                          controller: otherMethodController,
+                          decoration: InputDecoration(labelText: 'Diğer Sipariş Şekli Açıklaması'),
+                          validator: (value) {
+                            if (orderMethodValue == 'Diğer' && (value == null || value.isEmpty)) {
+                              return 'Bu alan zorunludur';
+                            }
+                            return null;
+                          },
+                        ),
+                    ],
+                  ),
                 ),
               ),
-
-
-
               actions: <Widget>[
                 TextButton(
                   child: Text('İptal'),
                   onPressed: () {
-                    isSaved = false; // İptal edildi
-                    Navigator.of(context)
-                        .pop(); // Sadece ekranı kapatır, başka hiçbir işlem yapmaz
+                    Navigator.of(context).pop(false); // İşlem iptal edildi
                   },
                 ),
                 TextButton(
                   child: Text('Kaydet'),
-                  onPressed: () {
-                    if (whoTook != null &&
+                  onPressed: () async {
+                    // Form validasyonu (Dropdown'lar ve TextField'lar için)
+                    // Burada basit bir null kontrolü yapıyorum, daha kapsamlı validasyon eklenebilir.
+                    if (whoTookValue != null &&
                         recipientController.text.isNotEmpty &&
-                        orderMethod != null &&
-                        (orderMethod != 'Diğer' || otherMethodController.text.isNotEmpty)) {
-                      if (whoTook == 'Müşterisi' && contactPersonController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Lütfen firmadan bilgilendirilecek kişi ismini girin')),
-                        );
-                      } else {
-                        // Kaydetme işlemini burada yapıyoruz
-                        saveToCustomerDetails(
-                          whoTook!,
-                          recipientController.text,
-                          whoTook == 'Müşterisi' ? contactPersonController.text : '',
-                          orderMethod == 'Diğer'
-                              ? otherMethodController.text
-                              : orderMethod!,
-                        );
-                        isSaved = true; // Kaydedildi
-                        Navigator.of(context).pop(); // Ekranı kapatır
-                      }
+                        orderMethodValue != null &&
+                        (orderMethodValue != 'Müşterisi' || contactPersonController.text.isNotEmpty) && // Sadece "Müşterisi" ise contactPerson zorunlu
+                        (orderMethodValue != 'Diğer' || otherMethodController.text.isNotEmpty)) {
+
+                      await saveToCustomerDetails(
+                        whoTookValue!,
+                        recipientController.text,
+                        whoTookValue == 'Müşterisi' ? contactPersonController.text : null, // Sadece "Müşterisi" ise gönder
+                        orderMethodValue == 'Diğer' ? otherMethodController.text : orderMethodValue!,
+                      );
+                      isSaved = true;
+                      Navigator.of(context).pop(true); // İşlem başarılı
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Lütfen tüm alanları doldurun')),
+                        SnackBar(content: Text('Lütfen tüm zorunlu alanları doldurun.')),
                       );
                     }
                   },
                 ),
               ],
             );
-
           },
         );
       },
-    );
-
-    return isSaved; // Dialog sonucu döndürülüyor
+    ) ?? false; // Dialog dışına tıklanırsa false döner
   }
 
 
@@ -2351,46 +2345,180 @@ class _ScanScreenState extends State<ScanScreen> {
                               ]);
                             }).toList(),
                             // Toplam satırları
+                            // Toplam Tutar Satırı
                             DataRow(cells: [
-                              DataCell(Text('')),
-                              DataCell(Text('Toplam Tutar')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text(subtotal.toStringAsFixed(2))),
-                              DataCell(Text('')),
+                              DataCell(Text('')), // Kodu için boş hücre
+                              DataCell(Text('')), // Detay için boş hücre
+                              DataCell(Text('')), // Adet için boş hücre
+                              DataCell(Text('')), // Adet Fiyatı için boş hücre
+                              DataCell(Text('Toplam Tutar', style: TextStyle(fontWeight: FontWeight.bold))), // İskonto altına Toplam Tutar
+                              DataCell(Text(subtotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold))), // Toplam Fiyat altına Toplam Tutar değeri
+                              DataCell(Text('')), // Düzenle için boş hücre
                             ]),
+// KDV Satırı
                             DataRow(cells: [
-                              DataCell(Text('')),
-                              DataCell(Text('KDV %20')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text(vat.toStringAsFixed(2))),
-                              DataCell(Text('')),
+                              DataCell(Text('')), // Kodu için boş hücre
+                              DataCell(Text('')), // Detay için boş hücre
+                              DataCell(Text('')), // Adet için boş hücre
+                              DataCell(Text('')), // Adet Fiyatı için boş hücre
+                              DataCell(Text('KDV %20', style: TextStyle(fontWeight: FontWeight.bold))), // İskonto altına KDV
+                              DataCell(Text(vat.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold))), // Toplam Fiyat altına KDV değeri
+                              DataCell(Text('')), // Düzenle için boş hücre
                             ]),
+// Genel Toplam Satırı
                             DataRow(cells: [
-                              DataCell(Text('')),
-                              DataCell(Text('Genel Toplam')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text('')),
-                              DataCell(Text(grandTotal.toStringAsFixed(2))),
-                              DataCell(Text('')),
+                              DataCell(Text('')), // Kodu için boş hücre
+                              DataCell(Text('')), // Detay için boş hücre
+                              DataCell(Text('')), // Adet için boş hücre
+                              DataCell(Text('')), // Adet Fiyatı için boş hücre
+                              DataCell(Text('Genel Toplam', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red))), // İskonto altına Genel Toplam
+                              DataCell(Text(grandTotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red))), // Toplam Fiyat altına Genel Toplam değeri
+                              DataCell(Text('')), // Düzenle için boş hücre
                             ]),
                           ],
                         ),
                       ),
                       // ... Diğer kodlar ...
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () async {
+                                bool shouldProceed = await showDialog(
+                                  context: context,
+                                  builder: (BuildContext context) {
+                                    return AlertDialog(
+                                      title: Text('Teklif Oluştur'),
+                                      content: Text('Teklif oluşturmak istediğinizden emin misiniz?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.of(context).pop(false);  // İşlemi iptal et
+                                          },
+                                          child: Text('Hayır'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            Navigator.of(context).pop(true);  // İşleme devam et
+                                          },
+                                          child: Text('Evet'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
 
-                      // Butonlar ve diğer bileşenler
+                                if (shouldProceed && mounted) {
+                                  try {
+                                    // Teklif oluşturma işlemi
+                                    DocumentReference quoteRef = await generateQuote();
+
+                                    // Sayfa verilerini temizle
+                                    clearScreen();
+
+                                    // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
+                                    await Future.delayed(Duration(seconds: 1));
+
+                                    if (mounted) {
+                                      // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
+                                      DocumentSnapshot quoteSnapshot = await quoteRef.get();
+                                      String quoteNumber = quoteSnapshot['quoteNumber'];
+                                      String customerName = quoteSnapshot['customerName'];
+
+                                      // Bilgi mesajını sayfa tamamen yenilendikten sonra göster
+                                      await showDialog(
+                                        context: context,
+                                        builder: (BuildContext context) {
+                                          return AlertDialog(
+                                            title: Text('Teklif Oluşturuldu'),
+                                            content: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text('Teklif No: $quoteNumber'),
+                                                Text('Müşteri: $customerName'),
+                                                SizedBox(height: 8),
+                                                Text('Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
+                                              ],
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () {
+                                                  Navigator.of(context).pop();  // Dialog'u kapat
+                                                },
+                                                child: Text('Tamam'),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Teklif oluşturulurken bir hata oluştu: $e'),
+                                            duration: Duration(seconds: 5),
+                                          ),
+                                        );
+                                      });
+                                    }
+                                  }
+                                }
+                              },
+                              child: Text('Teklif Ver'),
+                            )
+
+
+
+
+
+
+
+
+
+
+
+
+                            ,SizedBox(height: 100),
+                            ElevatedButton(
+                              onPressed: () async {
+                                bool shouldProceed = await showProcessingDialog();
+
+                                if (shouldProceed) {
+                                  await processSale();
+                                  await clearSelections();
+                                  clearScreen(); // Ekranı temizle
+                                } else {
+                                  print('İşlem iptal edildi, veriler silinmedi.');
+                                }
+                              },
+                              child: Text('Hesaba İşle'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                await processCashPayment();
+                                await clearSelections();
+                                clearScreen(); // Ekranı temizle
+                              },
+                              child: Text('Nakit Tahsilat'),
+                            ),
+                            ElevatedButton(
+                              onPressed: saveAsPDF,
+                              child: Text('PDF\'e Dönüştür'),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 );
-
               },
             ),
           ),
+
         ],
       ),
       bottomNavigationBar: CustomBottomBar(),
