@@ -425,18 +425,33 @@ class FirestoreService {
     return snapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
   }
 
-  Future<void> updateProductPricesByBrands(List<String> brands, double zamOrani) async {
+  Future<void> updateProductPricesByBrands(List<String> brands, dynamic zamOrani) async {
+    // Eğer zam orani int olarak geliyorsa, double'a çeviriyoruz.
+    double zamOraniDouble = zamOrani is int ? zamOrani.toDouble() : zamOrani;
+
     WriteBatch batch = _db.batch();
-    QuerySnapshot snapshot = await _db.collection('urunler').where('Marka', whereIn: brands).get();
+    QuerySnapshot snapshot = await _db.collection('urunler')
+        .where('Marka', whereIn: brands)
+        .get();
 
     snapshot.docs.forEach((doc) {
-      double currentPrice = (doc['Fiyat'] as num).toDouble();
-      double newPrice = currentPrice + (currentPrice * (zamOrani / 100));
-      batch.update(doc.reference, {'Fiyat': newPrice});
+      // 'Fiyat' alanı Firestore'da string olarak saklanıyor, bu yüzden önce double'a çeviriyoruz.
+      String fiyatString = doc['Fiyat']?.toString() ?? '0';
+      double currentPrice = double.tryParse(fiyatString) ?? 0.0;
+
+      // Zam oranını uyguluyoruz:
+      double newPrice = currentPrice + (currentPrice * (zamOraniDouble / 100));
+
+      print('Belge ${doc.id}: Eski Fiyat = $currentPrice, Yeni Fiyat = $newPrice');
+
+      // Yeni fiyatı yine string olarak (2 ondalık basamak) kaydediyoruz.
+      batch.update(doc.reference, {'Fiyat': newPrice.toStringAsFixed(2)});
     });
 
     await batch.commit();
   }
+
+
 
   Future<void> addZamToCollection(String markalar, String tarih, String yetkili, double zamOrani) async {
     await _db.collection('zamlar').add({

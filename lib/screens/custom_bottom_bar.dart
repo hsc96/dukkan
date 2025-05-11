@@ -6,77 +6,59 @@ class CustomBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? currentRoute = ModalRoute.of(context)?.settings.name;
+
     return BottomAppBar(
       color: colorTheme3,
+      elevation: 6,
+      shape: const CircularNotchedRectangle(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10), // Dikey padding'i ekran boyutuna göre ayarla
+        padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 8.0),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/home');
-                  },
-                  child: const FittedBox(
-                    child: Text('ANASAYFA'),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorTheme3,
-                    foregroundColor: colorTheme5,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12), // Yükseklik ayarlamak için padding
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/faturala');
-                  },
-                  child: const FittedBox(
-                    child: Text('FATURALA'),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorTheme3,
-                    foregroundColor: colorTheme5,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12), // Yükseklik ayarlamak için padding
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/customers');
-                  },
-                  child: const FittedBox(
-                    child: Text('MÜŞTERİLER'),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colorTheme3,
-                    foregroundColor: colorTheme5,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 12), // Yükseklik ayarlamak için padding
-                  ),
-                ),
-              ),
-            ),
+            _buildNavButton(context, 'ANASAYFA', '/home', Icons.home, currentRoute),
+            _buildNavButton(context, 'FATURALA', '/faturala', Icons.receipt_long, currentRoute),
+            _buildNavButton(context, 'MÜŞTERİLER', '/customers', Icons.people_alt, currentRoute),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavButton(BuildContext context, String label, String route, IconData icon, String? currentRoute) {
+    final bool isActive = currentRoute == route;
+
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+        child: ElevatedButton.icon(
+          onPressed: () {
+            if (!isActive) Navigator.pushNamed(context, route);
+          },
+          icon: Icon(
+            icon,
+            size: 20,
+            color: isActive ? Colors.white : colorTheme5,
+          ),
+          label: FittedBox(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.white : colorTheme5,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            backgroundColor: isActive ? colorTheme5 : colorTheme3,
+            foregroundColor: isActive ? Colors.white : colorTheme5,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            elevation: isActive ? 8 : 3,
+            shadowColor: isActive ? Colors.black54 : Colors.black26,
+          ),
         ),
       ),
     );

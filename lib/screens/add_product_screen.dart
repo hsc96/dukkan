@@ -4,6 +4,9 @@ import 'package:barcode_scan2/barcode_scan2.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'product_selection_screen.dart';
 import 'dart:math'; // Random sayı üretmek için ekledik
+import 'custom_bottom_bar.dart';
+import 'custom_app_bar.dart';
+import 'custom_drawer.dart';
 
 class AddProductScreen extends StatefulWidget {
   final bool addByBarcode;
@@ -20,11 +23,11 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final TextEditingController anaBirimController = TextEditingController();
   final TextEditingController barkodController = TextEditingController();
   final TextEditingController detayController = TextEditingController();
-  final TextEditingController fiyatController = TextEditingController();
+  final TextEditingController fiyatController = TextEditingController(text: 'Lütfen Fiyat Giriniz, Örnek:1.06');
   final TextEditingController gercekStokController = TextEditingController();
   final TextEditingController koduController = TextEditingController();
   final TextEditingController supplierController = TextEditingController(); // Kimden alındığı
-
+  final FocusNode fiyatFocusNode = FocusNode();
   String? selectedDoviz; // Döviz için seçilen değer
   String? selectedMarka; // Marka için seçilen değer
   List<String> markaListesi = []; // Veritabanından çekilen marka listesi
@@ -33,8 +36,16 @@ class _AddProductScreenState extends State<AddProductScreen> {
   bool isAddingToNewBox = false; // Yeni kutuya ekleme seçeneği
 
   @override
+  @override
   void initState() {
     super.initState();
+    // FocusNode listener'ı ekliyoruz:
+    fiyatFocusNode.addListener(() {
+      if (fiyatFocusNode.hasFocus && fiyatController.text == 'Lütfen Fiyat Giriniz, Örnek:1.06') {
+        fiyatController.clear();
+      }
+    });
+
     if (widget.addByBarcode) {
       scanBarcodeAndFetchProduct();
     } else {
@@ -43,6 +54,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
     fetchMarkaListesi(); // Marka listesini çekiyoruz
   }
+
 
   Future<void> fetchMarkaListesi() async {
     var querySnapshot = await FirebaseFirestore.instance.collection('urunler').get();
@@ -78,7 +90,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
             barkodController.text = productData['Barkod'] ?? '';
             detayController.text = productData['Detay'] ?? '';
             selectedDoviz = productData['Doviz'] ?? '';
-            fiyatController.text = productData['Fiyat'] ?? '';
+
             gercekStokController.text = productData['Gercek Stok'] ?? '';
             koduController.text = productData['Kodu'] ?? '';
             selectedMarka = productData['Marka'] ?? '';
@@ -113,7 +125,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         barkodController.text = selectedProduct['Barkod'] ?? '';
         detayController.text = selectedProduct['Detay'] ?? '';
         selectedDoviz = selectedProduct['Doviz'] ?? '';
-        fiyatController.text = selectedProduct['Fiyat'] ?? '';
+
         gercekStokController.text = selectedProduct['Gercek Stok'] ?? '';
         koduController.text = selectedProduct['Kodu'] ?? '';
         selectedMarka = selectedProduct['Marka'] ?? '';
@@ -159,6 +171,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
 
   Future<void> saveProduct() async {
     if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Eğer hiçbir seçenek seçilmediyse, uyarı gösterip işlemi durdurun.
+    if (!isAddingToExistingBox && !isAddingToNewBox) {
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Uyarı'),
+          content: Text('Lütfen "Mevcut kutuya ekle" veya "Yeni kutuya ekle" seçeneklerinden en az birini işaretleyin.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text('Tamam'),
+            ),
+          ],
+        ),
+      );
       return;
     }
 
@@ -252,12 +282,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
       'addedDate': DateTime.now(),
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Ürün başarıyla eklendi.')),
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Başarılı'),
+          content: Text('Ürün başarıyla eklendi.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Dialog'u kapatır
+              },
+              child: Text('Tamam'),
+            ),
+          ],
+        );
+      },
     );
 
     Navigator.of(context).pop();
   }
+
+
+
 
 
 
@@ -273,9 +321,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Ürün Ekle'),
-      ),
+      appBar: CustomAppBar(title: 'Ürün Ekle'),
+      endDrawer: CustomDrawer(),
       body: SingleChildScrollView(
         padding: EdgeInsets.all(16.0),
         child: Form(
@@ -333,9 +380,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
               ),
               TextFormField(
                 controller: fiyatController,
-                decoration: InputDecoration(labelText: 'Fiyat'),
+                focusNode: fiyatFocusNode, // FocusNode'u ekliyoruz
+                decoration: InputDecoration(
+                  labelText: 'Fiyat',
+                  hintText: 'Lütfen Fiyat Giriniz, Örnek:1.06',
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty || value == 'Lütfen Fiyat Giriniz, Örnek:1.06') {
+                    return 'Lütfen geçerli bir fiyat giriniz';
+                  }
+                  return null;
+                },
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
               ),
+
               TextFormField(
                 controller: gercekStokController,
                 decoration: InputDecoration(labelText: 'Gerçek Stok'),
@@ -415,6 +473,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
         ),
       ),
+      bottomNavigationBar: CustomBottomBar(),
     );
   }
 }
