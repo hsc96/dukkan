@@ -1506,15 +1506,14 @@ class _ScanScreenState extends State<ScanScreen> {
   // _ScanScreenState sınıfının içine bu fonksiyonu ekleyin veya güncelleyin:
 
   Future<bool> showProcessingDialog() async {
-    // Dialog içindeki state'i yönetmek için değişkenler
-    final _formKeyDialog = GlobalKey<
-        FormState>(); // Dialog içindeki form için key
+    final _formKeyDialog = GlobalKey<FormState>();
     String? whoTookValue;
-    TextEditingController recipientController = TextEditingController();
-    TextEditingController contactPersonController = TextEditingController();
+    final recipientController = TextEditingController();
+    final contactPersonController = TextEditingController();
     String? orderMethodValue;
-    TextEditingController otherMethodController = TextEditingController();
+    final otherMethodController = TextEditingController();
 
+    // Ön koşullar
     if (selectedCustomer == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1523,10 +1522,9 @@ class _ScanScreenState extends State<ScanScreen> {
       }
       return false;
     }
-    final validProducts = scannedProducts.where((p) =>
-    p['Kodu'] != null && p['Kodu']
-        .toString()
-        .isNotEmpty).toList();
+    final validProducts = scannedProducts
+        .where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty)
+        .toList();
     if (validProducts.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1539,27 +1537,21 @@ class _ScanScreenState extends State<ScanScreen> {
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
+      builder: (context) {
+        bool isSubmitting = false;
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setStateDialog) {
+          builder: (context, setStateDialog) {
             return AlertDialog(
               title: Text('Sipariş Bilgileri ve Onay'),
               content: SingleChildScrollView(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxHeight: MediaQuery
-                        .of(context)
-                        .size
-                        .height * 0.8,
-                    maxWidth: MediaQuery
-                        .of(context)
-                        .size
-                        .width * 0.95,
+                    maxHeight: MediaQuery.of(context).size.height * 0.8,
+                    maxWidth:  MediaQuery.of(context).size.width  * 0.95,
                   ),
-                  child: Form( // Form widget'ı eklendi
-                    key: _formKeyDialog, // GlobalKey atandı
+                  child: Form(
+                    key: _formKeyDialog,
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Müşteri: $selectedCustomer',
@@ -1570,213 +1562,127 @@ class _ScanScreenState extends State<ScanScreen> {
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: DataTable(
-                            columnSpacing: 10, // Sütunlar arası boşluğu azalt
+                            columnSpacing: 10,
                             columns: [
-                              DataColumn(label: Text(
-                                  'Kodu', style: TextStyle(fontSize: 12))),
-                              DataColumn(label: Text(
-                                  'Detay', style: TextStyle(fontSize: 12))),
-                              DataColumn(label: Text(
-                                  'Adet', style: TextStyle(fontSize: 12))),
-                              DataColumn(label: Text(
-                                  'Birim F.', style: TextStyle(fontSize: 12))),
-                              DataColumn(label: Text(
-                                  'İsk.', style: TextStyle(fontSize: 12))),
-                              DataColumn(label: Text(
-                                  'Toplam F.', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('Kodu', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('Detay', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('Adet', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('Birim F.', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('İsk.', style: TextStyle(fontSize: 12))),
+                              DataColumn(label: Text('Toplam F.', style: TextStyle(fontSize: 12))),
                             ],
                             rows: [
                               ...validProducts.map((product) {
                                 return DataRow(cells: [
-                                  DataCell(Text(
-                                      product['Kodu']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
-                                  DataCell(Text(
-                                      product['Detay']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
-                                  DataCell(Text(
-                                      product['Adet']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
-                                  DataCell(Text(
-                                      product['Adet Fiyatı']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
-                                  DataCell(Text(
-                                      product['İskonto']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
-                                  DataCell(Text(
-                                      product['Toplam Fiyat']?.toString() ?? '',
-                                      style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['Kodu']?.toString() ?? '', style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['Detay']?.toString() ?? '', style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['Adet']?.toString() ?? '', style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['Adet Fiyatı']?.toString() ?? '', style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['İskonto']?.toString() ?? '', style: TextStyle(fontSize: 11))),
+                                  DataCell(Text(product['Toplam Fiyat']?.toString() ?? '', style: TextStyle(fontSize: 11))),
                                 ]);
                               }).toList(),
                               DataRow(cells: [
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('Toplam', style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11))),
-                                DataCell(Text(subtotal.toStringAsFixed(2),
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11))),
+                                DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                                DataCell(Text('Toplam', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                                DataCell(Text(subtotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
                               ]),
                               DataRow(cells: [
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('KDV %20', style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 11))),
-                                DataCell(Text(vat.toStringAsFixed(2),
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11))),
+                                DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                                DataCell(Text('KDV %20', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
+                                DataCell(Text(vat.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11))),
                               ]),
                               DataRow(cells: [
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('')),
-                                DataCell(Text('Genel Top.', style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red,
-                                    fontSize: 11))),
-                                DataCell(Text(grandTotal.toStringAsFixed(2),
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.red,
-                                        fontSize: 11))),
+                                DataCell(Text('')), DataCell(Text('')), DataCell(Text('')), DataCell(Text('')),
+                                DataCell(Text('Genel Top.', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 11))),
+                                DataCell(Text(grandTotal.toStringAsFixed(2), style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red, fontSize: 11))),
                               ]),
                             ],
                           ),
                         ),
                         SizedBox(height: 15),
-                        Text('Ek Sipariş Bilgileri:',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Ek Sipariş Bilgileri:', style: TextStyle(fontWeight: FontWeight.bold)),
                         DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                              labelText: 'Ürünü Kim Aldı?'),
+                          decoration: InputDecoration(labelText: 'Ürünü Kim Aldı?'),
                           value: whoTookValue,
-                          items: ['Müşterisi', 'Kendi Firması'].map((
-                              String value) {
-                            return DropdownMenuItem<String>(
-                                value: value, child: Text(value));
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setStateDialog(() {
-                              whoTookValue = newValue;
-                            });
-                          },
-                          validator: (value) =>
-                          value == null
-                              ? 'Bu alan zorunludur'
-                              : null,
+                          items: ['Müşterisi', 'Kendi Firması']
+                              .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                              .toList(),
+                          onChanged: (v) => setStateDialog(() => whoTookValue = v),
+                          validator: (v) => v == null ? 'Bu alan zorunludur' : null,
                         ),
                         TextFormField(
                           controller: recipientController,
-                          decoration: InputDecoration(
-                              labelText: 'Teslim Alan Kişi/Firma Adı'),
-                          validator: (value) =>
-                          (value == null || value.isEmpty)
-                              ? 'Bu alan zorunludur'
-                              : null,
+                          decoration: InputDecoration(labelText: 'Teslim Alan Kişi/Firma Adı'),
+                          validator: (v) => (v == null || v.isEmpty) ? 'Bu alan zorunludur' : null,
                         ),
                         if (whoTookValue == 'Müşterisi')
                           TextFormField(
                             controller: contactPersonController,
-                            decoration: InputDecoration(
-                                labelText: 'Firmadan Bilgilendirilecek Kişi İsmi'),
-                            validator: (value) =>
-                            (whoTookValue == 'Müşterisi' &&
-                                (value == null || value.isEmpty))
-                                ? 'Bu alan zorunludur'
-                                : null,
+                            decoration: InputDecoration(labelText: 'İlgili Kişi İsmi'),
+                            validator: (v) => (v == null || v.isEmpty) ? 'Bu alan zorunludur' : null,
                           ),
                         DropdownButtonFormField<String>(
-                          decoration: InputDecoration(
-                              labelText: 'Sipariş Şekli'),
+                          decoration: InputDecoration(labelText: 'Sipariş Şekli'),
                           value: orderMethodValue,
-                          items: ['Telefon', 'Mail', 'Yerinde', 'Diğer'].map((
-                              String value) {
-                            return DropdownMenuItem<String>(
-                                value: value, child: Text(value));
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setStateDialog(() {
-                              orderMethodValue = newValue;
-                            });
-                          },
-                          validator: (value) =>
-                          value == null
-                              ? 'Bu alan zorunludur'
-                              : null,
+                          items: ['Telefon','Mail','Yerinde','Diğer']
+                              .map((v) => DropdownMenuItem(value: v, child: Text(v)))
+                              .toList(),
+                          onChanged: (v) => setStateDialog(() => orderMethodValue = v),
+                          validator: (v) => v == null ? 'Bu alan zorunludur' : null,
                         ),
                         if (orderMethodValue == 'Diğer')
                           TextFormField(
                             controller: otherMethodController,
-                            decoration: InputDecoration(
-                                labelText: 'Diğer Sipariş Şekli Açıklaması'),
-                            validator: (value) =>
-                            (orderMethodValue == 'Diğer' &&
-                                (value == null || value.isEmpty))
-                                ? 'Bu alan zorunludur'
-                                : null,
+                            decoration: InputDecoration(labelText: 'Diğer Açıklama'),
+                            validator: (v) => (v == null || v.isEmpty) ? 'Bu alan zorunludur' : null,
                           ),
                       ],
                     ),
                   ),
                 ),
               ),
-              actions: <Widget>[
+              actions: [
                 TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.of(context).pop(false),
                   child: Text('İptal'),
-                  onPressed: () => Navigator.of(context).pop(false),
                 ),
                 TextButton(
-                  child: Text('Kaydet'),
-                  onPressed: () async {
-                    if (_formKeyDialog.currentState!
-                        .validate()) { // Dialog içindeki Form'u validate et
-                      try {
-                        // saveToCustomerDetails fonksiyonunu, dialogdan alınan değerlerle çağır
-                        await saveToCustomerDetails(
-                          whoTookValue!, // Dropdown'dan seçilen değer
-                          recipientController.text,
-                          // TextField'dan alınan değer
-                          whoTookValue == 'Müşterisi' ? contactPersonController
-                              .text : null,
-                          // Koşullu olarak TextField'dan alınan değer
-                          orderMethodValue == 'Diğer'
-                              ? otherMethodController.text
-                              : orderMethodValue!, // Koşullu olarak TextField veya Dropdown'dan alınan değer
-                        );
-                        // İşlem başarılıysa dialogu kapat ve true döndür
-                        if (mounted) Navigator.of(context).pop(true);
-                      } catch (e) {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(
-                                'Sipariş detayları kaydedilirken hata: $e')),
-                          );
-                          // Hata durumunda dialogu kapatıp false döndürebilirsiniz veya açık bırakabilirsiniz.
-                          // Şimdilik, hata mesajı gösterip dialogu açık bırakalım ki kullanıcı tekrar deneyebilsin.
-                          // Eğer kapatıp false döndürmek isterseniz:
-                          // Navigator.of(context).pop(false);
-                        }
-                      }
-                    } else {
-                      // Form validasyonu başarısız oldu
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(
-                              'Lütfen tüm zorunlu alanları doldurun.')),
-                        );
-                      }
-                      // Dialog açık kalsın, kullanıcı hataları düzeltsin.
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                    if (!_formKeyDialog.currentState!.validate()) return;
+                    setStateDialog(() => isSubmitting = true);
+
+                    try {
+                      // 1) Detayları kaydet
+                      await saveToCustomerDetails(
+                        whoTookValue!,
+                        recipientController.text,
+                        whoTookValue == 'Müşterisi'
+                            ? contactPersonController.text
+                            : null,
+                        orderMethodValue == 'Diğer'
+                            ? otherMethodController.text
+                            : orderMethodValue!,
+                      );
+
+                      // 2) Satış verisini kaydet
+                      await processSale();
+
+                      // 3) Geçici veriyi temizle ve ana ekrana dön
+                      clearScreen();
+
+                    } catch (e) {
+                      setStateDialog(() => isSubmitting = false);
+                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Hata oluştu: $e')),
+                      );
                     }
                   },
+                  child: isSubmitting
+                      ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Kaydet'),
                 ),
               ],
             );
@@ -1785,6 +1691,8 @@ class _ScanScreenState extends State<ScanScreen> {
       },
     ) ?? false;
   }
+
+
 
 
   Future<void> saveAsPDF() async {
@@ -2638,122 +2546,86 @@ class _ScanScreenState extends State<ScanScreen> {
                               icon: Icon(Icons.point_of_sale_outlined),
                               label: Text('Hesaba İşle'),
                               style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 10),
-                                  textStyle: TextStyle(fontSize: 13)
+                                backgroundColor: Colors.green,
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                textStyle: TextStyle(fontSize: 13),
                               ),
                               onPressed: () async {
                                 if (!_isConnected) {
-                                  _showNoConnectionDialog('Bağlantı Sorunu',
-                                      'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.');
+                                  _showNoConnectionDialog(
+                                    'Bağlantı Sorunu',
+                                    'İnternet bağlantısı yok, işlem gerçekleştirilemiyor.',
+                                  );
                                   return;
                                 }
                                 if (selectedCustomer == null) {
-                                  if (mounted) ScaffoldMessenger.of(context)
-                                      .showSnackBar(SnackBar(content: Text(
-                                      'Lütfen bir müşteri seçin.')));
-                                  return;
-                                }
-                                final validProducts = scannedProducts.where((
-                                    p) =>
-                                p['Kodu'] != null && p['Kodu']
-                                    .toString()
-                                    .isNotEmpty).toList();
-                                if (validProducts.isEmpty) {
-                                  if (mounted) ScaffoldMessenger.of(context)
-                                      .showSnackBar(SnackBar(content: Text(
-                                      'Listede geçerli ürün bulunmuyor.')));
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(SnackBar(content: Text('Lütfen bir müşteri seçin.')));
                                   return;
                                 }
 
-                                // Adım 1: Kullanıcıdan genel bir onay al
-                                bool confirmAction = await showDialog<bool>(
+                                // 1) İşleme onayı
+                                bool confirm = await showDialog<bool>(
                                   context: context,
-                                  builder: (BuildContext context) {
-                                    return AlertDialog(
-                                      title: Text('Hesaba İşleme Onayı'),
-                                      content: Text('"${selectedCustomer ??
-                                          " Seçili müşteri"}" için ürünleri hesaba işlemek istediğinizden emin misiniz?'),
-                                      actions: [
-                                        TextButton(onPressed: () =>
-                                            Navigator.of(context).pop(false),
-                                            child: Text('Hayır')),
-                                        TextButton(onPressed: () =>
-                                            Navigator.of(context).pop(true),
-                                            child: Text('Evet')),
-                                      ],
-                                    );
-                                  },
+                                  builder: (_) => AlertDialog(
+                                    title: Text('Hesaba İşleme Onayı'),
+                                    content: Text(
+                                      '"$selectedCustomer" isimli müşterinin hesabına işlemektan emin misiniz?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: Text('Hayır'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        child: Text('Evet'),
+                                      ),
+                                    ],
+                                  ),
                                 ) ?? false;
 
-                                if (!confirmAction) {
-                                  print(
-                                      'Hesaba işleme kullanıcı tarafından iptal edildi (ilk onay).');
+                                if (!confirm) return;
+
+                                // 2) Sipariş detay formu ve kaydetme
+                                bool detailsSaved = await showProcessingDialog();
+                                if (!detailsSaved) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Sipariş detayları kaydı iptal edildi veya bir hata oluştu.',
+                                      ),
+                                    ),
+                                  );
                                   return;
                                 }
 
-                                // Adım 2: Sipariş detaylarını al ve kaydet (showProcessingDialog -> saveToCustomerDetails çağırır)
-                                // Bu dialog, içindeki "Kaydet" butonuna basıldığında saveToCustomerDetails'i çağırır
-                                // ve işlem başarılıysa true, değilse false döner.
-                                bool detailsSavedSuccessfully = await showProcessingDialog();
+                                // 3) İşlemi kaydet
+                                try {
+                                  await processSale();
 
-                                if (detailsSavedSuccessfully && mounted) {
-                                  try {
-                                    // Adım 3: Ana satış kaydını yap (processSale).
-                                    // ÖNEMLİ: processSale() fonksiyonunun temporarySelections belgesini SİLMEDİĞİNDEN
-                                    // emin olun, çünkü bu işi sizin clearScreen() fonksiyonunuz yapıyor.
-                                    // Eğer processSale() siliyorsa, clearScreen()'deki silme işlemini kaldırın.
-                                    await processSale();
-
-                                    // Adım 4: Geçici verileri sil, UI'ı temizle, başarı mesajı göster ve anasayfaya yönlendir.
-                                    // Sizin clearScreen fonksiyonunuz Firestore'dan silme, UI temizleme,
-                                    // "İşlem Tamamlandı" dialogunu gösterme ve anasayfaya yönlendirme işlemlerini yapıyor.
-                                    // selectedCustomer gibi bilgileri clearScreen'den önce bir değişkende saklayın
-                                    // eğer clearScreen içindeki dialogda kullanacaksanız, ama sizin örneğinizde
-                                    // clearScreen dialogu "Veriler başarıyla temizlendi." diyor, müşteri adını kullanmıyor.
-
-                                    // clearScreen fonksiyonu zaten içinde showDialog ve Navigator.pushReplacement
-                                    // barındırdığı için, buradaki showDialog ve Navigator.pushAndRemoveUntil
-                                    // çağrılarına gerek kalmıyor. clearScreen her şeyi halledecek.
-
-                                    // Sadece "ürünler başarı ile kaydedildi" veya "sipariş başarıyla tamamlandı"
-                                    // gibi bir ara bilgilendirme SnackBar'ı gösterebiliriz clearScreen'den önce.
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(content: Text(
-                                            'Ürünler başarıyla kaydedildi, yönlendiriliyorsunuz...')),
-                                      );
-                                      // clearScreen çağrılmadan önce SnackBar'ın gösterilmesi için kısa bir bekleme
-                                      await Future.delayed(
-                                          const Duration(milliseconds: 1500));
-                                    }
-
-                                    clearScreen(); // Bu fonksiyon Firestore'u siler, UI'ı temizler, dialog gösterir ve yönlendirir.
-
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(content: Text(
-                                            'Hesaba işleme sırasında bir hata oluştu (kayıt sonrası): $e')),
-                                      );
-                                    }
-                                    // Hata durumunda clearScreen() çağrılmamalı ki kullanıcı verileri kaybetmesin
-                                    // veya durumu inceleyebilsin.
-                                  }
-                                } else if (mounted) {
-                                  // detailsSavedSuccessfully false ise
-                                  print(
-                                      'Sipariş detayları kaydedilmedi veya işlem iptal edildi (showProcessingDialog false döndü).');
+                                  // 4) Başarı mesajı ve anasayfaya yönlendirme
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text(
-                                        'Sipariş detayları kaydı iptal edildi veya bir hata oluştu.')),
+                                    SnackBar(
+                                      content: Text(
+                                        'İşlem başarılı, yönlendiriliyorsunuz...',
+                                      ),
+                                    ),
+                                  );
+                                  await Future.delayed(const Duration(milliseconds: 1500));
+                                  clearScreen();
+                                } catch (e) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'Hesaba işleme sırasında bir hata oluştu: $e',
+                                      ),
+                                    ),
                                   );
                                 }
                               },
                             ),
+
                             ElevatedButton(
                               onPressed: () async {
                                 await processCashPayment();
