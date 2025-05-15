@@ -24,6 +24,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:async';
 import 'blinking_circle.dart';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart' as xlsio;
+import 'excel_export_util.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class ScanScreen extends StatefulWidget {
   final Function(Map<String, dynamic>) onCustomerProcessed;
@@ -1390,36 +1392,26 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
 
-  Future<void> saveToCustomerDetails(String whoTook, String? recipient,
-      String? contactPerson, String orderMethod) async {
+  Future<void> saveToCustomerDetails(
+      String whoTook, String? recipient, String? contactPerson, String orderMethod) async {
     if (selectedCustomer == null) return;
 
     User? currentUser = FirebaseAuth.instance.currentUser;
-
     String? fullName;
-
-    // Mevcut kullanıcının tam adını veritabanından çekiyoruz
     if (currentUser != null) {
-      var userDoc = await FirebaseFirestore.instance.collection('users').doc(
-          currentUser.uid).get();
+      var userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
       if (userDoc.exists) {
         fullName = userDoc.data()?['fullName'];
       }
     }
 
-    var customerCollection = FirebaseFirestore.instance.collection(
-        'customerDetails');
-    var querySnapshot = await customerCollection.where(
-        'customerName', isEqualTo: selectedCustomer).get();
+    var customerCollection = FirebaseFirestore.instance.collection('customerDetails');
+    var querySnapshot = await customerCollection.where('customerName', isEqualTo: selectedCustomer).get();
 
     var processedProducts = scannedProducts
-        .where((product) =>
-    product['Kodu'] != null && product['Kodu']
-        .toString()
-        .isNotEmpty)
+        .where((product) => product['Kodu'] != null && product['Kodu'].toString().isNotEmpty)
         .map((product) {
-      double unitPrice = double.tryParse(
-          product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
+      double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
       int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
       double totalPrice = unitPrice * quantity;
 
@@ -1431,30 +1423,22 @@ class _ScanScreenState extends State<ScanScreen> {
         'Toplam Fiyat': totalPrice.toStringAsFixed(2),
         'İskonto': product['İskonto'],
         'addedBy': product['addedBy'] ?? 'Unknown User',
-        'whoTook': 'Müşteri',
-        'recipient': 'Teslim Alan',
-        'contactPerson': 'İlgili Kişi',
-        'orderMethod': 'Telefon',
-        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(
-            DateTime.now()),
+        'whoTook': whoTook,
+        'recipient': recipient,
+        'contactPerson': contactPerson,
+        'orderMethod': orderMethod,
+        'siparisTarihi': DateFormat('dd MMMM yyyy, HH:mm', 'tr_TR').format(DateTime.now()),
         'islemeAlan': fullName ?? 'Unknown',
       };
     }).toList();
 
-
     if (querySnapshot.docs.isNotEmpty) {
       var docRef = querySnapshot.docs.first.reference;
-      var existingProducts = List<Map<String, dynamic>>.from(
-          querySnapshot.docs.first['products'] ?? []);
-
-      // Mevcut ürünleri güncelleyerek veya yeni ürünleri ekleyerek
+      var existingProducts = List<Map<String, dynamic>>.from(querySnapshot.docs.first['products'] ?? []);
       for (var product in processedProducts) {
         existingProducts.add(product);
       }
-
-      await docRef.update({
-        'products': existingProducts,
-      });
+      await docRef.update({'products': existingProducts});
     } else {
       await customerCollection.add({
         'customerName': selectedCustomer,
@@ -1462,43 +1446,7 @@ class _ScanScreenState extends State<ScanScreen> {
       });
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Ürünler başarıyla kaydedildi')),
-    );
-
-    // TemporarySelections içindeki verileri temizle
-    await _customerSelectionService.clearTemporaryData();
-
-    // ScanScreen'i sıfırla
-    setState(() {
-      selectedCustomer = null;
-      scannedProducts.clear();
-      originalProducts.clear();
-      toplamTutar = 0.0;
-      kdv = 0.0;
-      genelToplam = 0.0;
-    });
-
-    // Firestore'daki current document'ı güncelle
-    FirebaseFirestore.instance.collection('selectedCustomer')
-        .doc('current')
-        .set({
-      'customerName': '',
-      'totalAmount': '0.00',
-    });
-
-    // Müşteri detayları ekranına yönlendir
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            ScanScreen(
-              onCustomerProcessed: (data) {},
-              documentId: 'your_document_id_here', // Pass the correct document ID here
-            ),
-      ),
-
-    );
+    // Artık burada: setState, Navigator, ScaffoldMessenger, showDialog **YOK**
   }
 
   // _ScanScreenState sınıfının içine bu fonksiyonu ekleyin veya güncelleyin:
@@ -1513,7 +1461,7 @@ class _ScanScreenState extends State<ScanScreen> {
     String? orderMethodValue;
     final otherMethodController = TextEditingController();
 
-    // Ön koşullar
+    // Müşteri seçili değilse uyarı verip çık
     if (selectedCustomer == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1522,6 +1470,8 @@ class _ScanScreenState extends State<ScanScreen> {
       }
       return false;
     }
+
+    // Geçerli ürün yoksa uyarı verip çık
     final validProducts = scannedProducts
         .where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty)
         .toList();
@@ -1534,6 +1484,7 @@ class _ScanScreenState extends State<ScanScreen> {
       return false;
     }
 
+    // Dialog göster
     return await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -1547,7 +1498,7 @@ class _ScanScreenState extends State<ScanScreen> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxHeight: MediaQuery.of(context).size.height * 0.8,
-                    maxWidth:  MediaQuery.of(context).size.width  * 0.95,
+                    maxWidth: MediaQuery.of(context).size.width * 0.95,
                   ),
                   child: Form(
                     key: _formKeyDialog,
@@ -1625,7 +1576,7 @@ class _ScanScreenState extends State<ScanScreen> {
                         DropdownButtonFormField<String>(
                           decoration: InputDecoration(labelText: 'Sipariş Şekli'),
                           value: orderMethodValue,
-                          items: ['Telefon','Mail','Yerinde','Diğer']
+                          items: ['Telefon', 'Mail', 'Yerinde', 'Diğer']
                               .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                               .toList(),
                           onChanged: (v) => setStateDialog(() => orderMethodValue = v),
@@ -1648,14 +1599,16 @@ class _ScanScreenState extends State<ScanScreen> {
                   child: Text('İptal'),
                 ),
                 TextButton(
+                  child: isSubmitting
+                      ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text('Kaydet'),
                   onPressed: isSubmitting
                       ? null
                       : () async {
                     if (!_formKeyDialog.currentState!.validate()) return;
                     setStateDialog(() => isSubmitting = true);
-
                     try {
-                      // 1) Detayları kaydet
+                      // 1) Veritabanına kayıt
                       await saveToCustomerDetails(
                         whoTookValue!,
                         recipientController.text,
@@ -1666,23 +1619,23 @@ class _ScanScreenState extends State<ScanScreen> {
                             ? otherMethodController.text
                             : orderMethodValue!,
                       );
-
-                      // 2) Satış verisini kaydet
-                      await processSale();
-
-                      // 3) Geçici veriyi temizle ve ana ekrana dön
-                      clearScreen();
-
+                      // 2) sales koleksiyonuna ekle
+                      await FirebaseFirestore.instance.collection('sales').add({
+                        'customerName': selectedCustomer,
+                        'products': List<Map<String, dynamic>>.from(scannedProducts),
+                        'amount': grandTotal,
+                        'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
+                        'salespersons': [currentUserName],
+                        'type': 'Hesaba İşle',
+                      });
+                      Navigator.of(context).pop(true);
                     } catch (e) {
                       setStateDialog(() => isSubmitting = false);
-                      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Hata oluştu: $e')),
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Kaydetme hatası: $e')),
                       );
                     }
                   },
-                  child: isSubmitting
-                      ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text('Kaydet'),
                 ),
               ],
             );
@@ -1691,6 +1644,9 @@ class _ScanScreenState extends State<ScanScreen> {
       },
     ) ?? false;
   }
+
+
+
 
 
 
@@ -1789,8 +1745,10 @@ class _ScanScreenState extends State<ScanScreen> {
       'quoteNumber': quoteNumber,
       'products': scannedProducts,
       'date': DateTime.now(),
+      'salesperson': currentUserName,        // tek string
+      'type': 'Teklif',
     });
-
+    Navigator.of(context).pop();
     return docRef; // Teklif kaydedilen DocumentReference'ı döndür
   }
 
@@ -1872,28 +1830,23 @@ class _ScanScreenState extends State<ScanScreen> {
     });
   }
 
-  void _clearScreen() {
-    setState(() {
-      scannedProducts.clear();
-      selectedCustomer = null;
-      _customerSelectionService.clearTemporaryData();
-    });
-  }
+  // void _clearScreen() {
+//   setState(() {
+//     scannedProducts.clear();
+//     selectedCustomer = null;
+//     _customerSelectionService.clearTemporaryData();
+//   });
+// }
 
 
-  void handleProcessCompletion() async {
-    if (selectedCustomer != null) {
-      await FirebaseFirestore.instance
-          .collection('temporarySelections')
-          .doc('current')
-          .set({
-        'products': [],
-      }, SetOptions(merge: true));
-
-      // Ekranı temizle
-      _clearScreen();
-    }
-  }
+  // void handleProcessCompletion() async {
+//   if (selectedCustomer != null) {
+//     await FirebaseFirestore.instance
+//         .collection('temporarySelections')
+//         .doc('current')
+//         .set({
+//       'products': [],
+//     }, SetOptions(merge: true));
 
   Future<void> processCashPayment() async {
     if (selectedCustomer == null) {
@@ -1944,34 +1897,27 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
 
-  Future<void> clearSelections() async {
+  Future<void> clearSelections(String docId) async {
     try {
-      // Firestore'daki temporarySelections koleksiyonunda current alanını temizle
       await FirebaseFirestore.instance
           .collection('temporarySelections')
-          .doc('current')
+          .doc(docId)
           .delete();
-
-      // Seçimleri yerel olarak temizle
-      setState(() {
-        selectedCustomer = null;
-        scannedProducts.clear();
-        originalProducts.clear();
-        toplamTutar = 0.0;
-        kdv = 0.0;
-        genelToplam = 0.0;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Seçimler temizlendi')),
-      );
+      // Ayrıca UI'ı da temizle (gerekirse)
+      if (mounted) {
+        setState(() {
+          selectedCustomer = null;
+          scannedProducts.clear();
+          // ... diğer temizlikler
+        });
+      }
     } catch (e) {
-      print('Veri temizlenirken hata oluştu: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Veri temizlenirken hata oluştu')),
-      );
+      print('Temizlik hatası: $e');
     }
   }
+
+
+
 
   void clearScreen() {
     if (widget.documentId != null) {
@@ -2426,108 +2372,111 @@ class _ScanScreenState extends State<ScanScreen> {
                       // ... Diğer kodlar ...
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 5.0),
-                        child: Row(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             ElevatedButton(
-                              onPressed: () async {
-                                bool shouldProceed = await showDialog(
-                                  context: context,
-                                  builder: (BuildContext context) {
-                                    return AlertDialog(
-                                      title: Text('Teklif Oluştur'),
-                                      content: Text(
-                                          'Teklif oluşturmak istediğinizden emin misiniz?'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).pop(
-                                                false); // İşlemi iptal et
-                                          },
-                                          child: Text('Hayır'),
-                                        ),
-                                        TextButton(
-                                          onPressed: () {
-                                            Navigator.of(context).pop(
-                                                true); // İşleme devam et
-                                          },
-                                          child: Text('Evet'),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                );
+                            onPressed: () async {
+                      // Liste boş mu kontrolü
+                      final validProducts = scannedProducts
+                          .where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty)
+                          .toList();
+                      if (validProducts.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Listede geçerli ürün bulunmuyor.')),
+                      );
+                      return;
+                      }
 
-                                if (shouldProceed && mounted) {
-                                  try {
-                                    // Teklif oluşturma işlemi
-                                    DocumentReference quoteRef = await generateQuote();
+                      // Mevcut "Teklif Oluştur" onayı
+                      bool shouldProceed = await showDialog<bool>(
+                      context: context,
+                      builder: (BuildContext context) {
+                      return AlertDialog(
+                      title: Text('Teklif Oluştur'),
+                      content: Text('Teklif oluşturmak istediğinizden emin misiniz?'),
+                      actions: [
+                      TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: Text('Hayır'),
+                      ),
+                      TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: Text('Evet'),
+                      ),
+                      ],
+                      );
+                      },
+                      ) ?? false;
 
-                                    // Sayfa verilerini temizle
-                                    clearScreen();
+                      if (shouldProceed && mounted) {
+                      try {
+                      // Teklif oluşturma işlemi
+                      DocumentReference quoteRef = await generateQuote();
 
-                                    // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
-                                    await Future.delayed(Duration(seconds: 1));
+                      // Sayfa verilerini temizle
+                      clearScreen();
 
-                                    if (mounted) {
-                                      // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
-                                      DocumentSnapshot quoteSnapshot = await quoteRef
-                                          .get();
-                                      String quoteNumber = quoteSnapshot['quoteNumber'];
-                                      String customerName = quoteSnapshot['customerName'];
+                      // Sayfa yenilenmeden önce biraz bekleyin (örneğin 1 saniye)
+                      await Future.delayed(Duration(seconds: 1));
 
-                                      // Bilgi mesajını sayfa tamamen yenilendikten sonra göster
-                                      await showDialog(
-                                        context: context,
-                                        builder: (BuildContext context) {
-                                          return AlertDialog(
-                                            title: Text('Teklif Oluşturuldu'),
-                                            content: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text('Teklif No: $quoteNumber'),
-                                                Text('Müşteri: $customerName'),
-                                                SizedBox(height: 8),
-                                                Text(
-                                                    'Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
-                                              ],
-                                            ),
-                                            actions: [
-                                              TextButton(
-                                                onPressed: () {
-                                                  Navigator.of(context)
-                                                      .pop(); // Dialog'u kapat
-                                                },
-                                                child: Text('Tamam'),
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      WidgetsBinding.instance
-                                          .addPostFrameCallback((_) {
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                                'Teklif oluşturulurken bir hata oluştu: $e'),
-                                            duration: Duration(seconds: 5),
-                                          ),
-                                        );
-                                      });
-                                    }
-                                  }
-                                }
-                              },
-                              child: Text('Teklif Ver'),
-                            )
+                      if (mounted) {
+                      // Teklif numarasını ve müşteri adını almak için veritabanını kontrol et
+                      DocumentSnapshot quoteSnapshot = await quoteRef.get();
+                      String quoteNumber = quoteSnapshot['quoteNumber'];
+                      String customerName = quoteSnapshot['customerName'];
+
+                      // Bilgi mesajını göster
+                      await showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                      return AlertDialog(
+                      title: Text('Teklif Oluşturuldu'),
+                      content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                      Text('Teklif No: $quoteNumber'),
+                      Text('Müşteri: $customerName'),
+                      SizedBox(height: 8),
+                      Text('Teklifi müşteri detayları veya teklifler sayfasından ulaşabilirsiniz.'),
+                      ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(); // 1) Dialog'u kapat
+                            Navigator.of(context).pop(); // 2) ScanScreen'i kapat → header güncellenecek
+                          },
+                          child: Text('Tamam'),
+                      ),
+                      ],
+                      );
+                      },
+                      );
+                      }
+                      } catch (e) {
+                      if (mounted) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                      content: Text('Teklif oluşturulurken bir hata oluştu: $e'),
+                      duration: Duration(seconds: 5),
+                      ),
+                      );
+                      });
+                      }
+                      }
+                      }
+                      },
+                        child: Text('Teklif Ver'),
+                      ),
 
 
-                            ,
-                            SizedBox(height: 100),
+
+                                                SizedBox(height: 100),
                             // _ScanScreenState sınıfındaki build metodunun içindeki butonlar bölümünde:
 
                             // _ScanScreenState sınıfındaki build metodunun içindeki "Hesaba İşle" butonu:
@@ -2541,12 +2490,10 @@ class _ScanScreenState extends State<ScanScreen> {
                             // _ScanScreenState sınıfındaki build metodunun içindeki "Hesaba İşle" ElevatedButton:
 
                             // _ScanScreenState sınıfındaki build metodunun içindeki "Hesaba İşle" ElevatedButton:
-
                             ElevatedButton.icon(
                               icon: Icon(Icons.point_of_sale_outlined),
                               label: Text('Hesaba İşle'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
                                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 textStyle: TextStyle(fontSize: 13),
                               ),
@@ -2558,88 +2505,128 @@ class _ScanScreenState extends State<ScanScreen> {
                                   );
                                   return;
                                 }
+
                                 if (selectedCustomer == null) {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(SnackBar(content: Text('Lütfen bir müşteri seçin.')));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Lütfen bir müşteri seçin.')),
+                                  );
                                   return;
                                 }
 
-                                // 1) İşleme onayı
-                                bool confirm = await showDialog<bool>(
-                                  context: context,
-                                  builder: (_) => AlertDialog(
-                                    title: Text('Hesaba İşleme Onayı'),
-                                    content: Text(
-                                      '"$selectedCustomer" isimli müşterinin hesabına işlemektan emin misiniz?',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.of(context).pop(false),
-                                        child: Text('Hayır'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => Navigator.of(context).pop(true),
-                                        child: Text('Evet'),
-                                      ),
-                                    ],
-                                  ),
-                                ) ?? false;
-
-                                if (!confirm) return;
-
-                                // 2) Sipariş detay formu ve kaydetme
+                                // 1) Dialog ile verileri kaydettir
                                 bool detailsSaved = await showProcessingDialog();
-                                if (!detailsSaved) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Sipariş detayları kaydı iptal edildi veya bir hata oluştu.',
-                                      ),
-                                    ),
-                                  );
-                                  return;
-                                }
 
-                                // 3) İşlemi kaydet
-                                try {
-                                  await processSale();
+                                // 2) Kayıt başarılıysa (true dönüyorsa) sadece burada temizlik ve yönlendirme!
+                                if (detailsSaved == true) {
+                                  // temporarySelections'ı sil
+                                  await clearSelections(widget.documentId!);
 
-                                  // 4) Başarı mesajı ve anasayfaya yönlendirme
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'İşlem başarılı, yönlendiriliyorsunuz...',
-                                      ),
-                                    ),
-                                  );
-                                  await Future.delayed(const Duration(milliseconds: 1500));
-                                  clearScreen();
-                                } catch (e) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'Hesaba işleme sırasında bir hata oluştu: $e',
-                                      ),
-                                    ),
+                                  // UI'ı sıfırla
+                                  setState(() {
+                                    selectedCustomer = null;
+                                    scannedProducts.clear();
+                                    originalProducts.clear();
+                                    toplamTutar = 0.0;
+                                    kdv = 0.0;
+                                    genelToplam = 0.0;
+                                  });
+
+                                  // Ana ekrana (CustomHeaderScreen) yönlendir
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(builder: (context) => CustomHeaderScreen()),
                                   );
                                 }
                               },
                             ),
+
+
+
+
+
+
+
+
+
+
+
+
 
                             ElevatedButton(
                               onPressed: () async {
+                                // 1) Ensure you have a selected customer
+                                if (selectedCustomer == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Lütfen bir müşteri seçin')),
+                                  );
+                                  return;
+                                }
+
+                                // 2) Perform your existing cash‐payment logic
                                 await processCashPayment();
-                                await clearSelections();
-                                clearScreen(); // Ekranı temizle
+
+                                // 3) Record a new “sales” document for today
+                                //    so that CustomHeaderScreen will pick it up
+                                final user = FirebaseAuth.instance.currentUser;
+                                String userName = 'Unknown';
+                                if (user != null) {
+                                  final uDoc = await FirebaseFirestore.instance
+                                      .collection('users')
+                                      .doc(user.uid)
+                                      .get();
+                                  userName = uDoc.data()?['fullName'] ?? userName;
+                                }
+                                await FirebaseFirestore.instance.collection('sales').add({
+                                  'salespersons': [userName],
+                                  'date': DateFormat('dd.MM.yyyy').format(DateTime.now()),
+                                  'customerName': selectedCustomer,
+                                  'amount': toplamTutar,
+                                  'products': scannedProducts,
+                                  'salespersons': [currentUserName],
+                                  'type': 'N.Tahsilat',
+                                });
+
+                                // 4) Clear out your temp data & navigate home (as you already do)
+                                await clearSelections(widget.documentId!);
+                                clearScreen();
                               },
                               child: Text('Nakit Tahsilat'),
                             ),
+
                             ElevatedButton(
                               onPressed: saveAsPDF,
                               child: Text('PDF\'e Dönüştür'),
                             ),
+                            // ... diğer butonlarınızın bulunduğu Row içinde, PDF butonunun yanına:
+                            ElevatedButton(
+                              onPressed: () {
+                                final validProducts = scannedProducts
+                                    .where((p) => p['Kodu'] != null && p['Kodu'].toString().isNotEmpty)
+                                    .toList();
+                                if (validProducts.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Listede geçerli ürün bulunmuyor.')),
+                                  );
+                                  return;
+                                }
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ExcelExportScreen(
+                                      products: validProducts,
+                                      customerName: selectedCustomer!,  // Bu “Açıklama” alanı
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Text('Excel\'e Dönüştür'),
+                            ),
+
+
+
+
                           ],
                         ),
+                      ),
                       ),
                     ],
                   ),

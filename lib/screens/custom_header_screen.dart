@@ -7,45 +7,77 @@ import 'custom_drawer.dart';
 import 'scan_screen.dart';
 import 'package:flutter/cupertino.dart';
 import '../utils/colors.dart';
+import '../services/sales_data_service.dart';
 
 class CustomHeaderScreen extends StatefulWidget {
   @override
   _CustomHeaderScreenState createState() => _CustomHeaderScreenState();
 }
-
+List<Map<String, dynamic>> users = [];
 class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
-  List<Map<String, dynamic>> users = [];
+
   Map<String, Map<String, dynamic>> salesAndQuotesData = {};
-  Map<String, Map<String, dynamic>> previousSalesData = {};
-  List<Map<String, String>> selectedCustomers = [];
-  List<Map<String, String>> temporarySelections = []; // Define the list here
+  List<Map<String, String>> temporarySelections = [];
+  final _salesService = SalesDataService();
+  List<String> allSalespersons = [];
 
 
   @override
   void initState() {
     super.initState();
-    fetchUsers();
 
+    _fetchAllUsers().then((_) => _loadHeaderData());
+    _listenToTemporarySelections();  // ← Bunu ekleyin
   }
 
-  Future<void> fetchUsers() async {
-    var querySnapshot = await FirebaseFirestore.instance.collection('users').get();
-    var docs = querySnapshot.docs;
+  Future<void> _loadHeaderData() async {
+    DateTime today = DateTime.now();
+    var salesData  = await _salesService.getSalesForDate(today);
+    var quoteData  = await _salesService.getQuotesForDate(today);
+
+    // İsimleri birleşik bir haritaya alalım
+    Map<String, Map<String, dynamic>> combined = {};
+    for (var name in {...salesData.keys, ...quoteData.keys}) {
+      combined[name] = {
+        'salesCount':  salesData[name]?['count']       ?? 0,
+        'quotesCount': quoteData[name]?['count']       ?? 0,
+        // isterseniz toplam tutarları da saklayabilirsiniz:
+        'salesAmount':salesData[name]?['totalAmount'] ?? 0.0,
+        'quotesAmount':quoteData[name]?['totalAmount'] ?? 0.0,
+      };
+    }
 
     setState(() {
-      users = docs.map((doc) {
-        var data = doc.data() as Map<String, dynamic>;
-        return {
-          'id': doc.id,
-          'name': data['fullName'] ?? 'Bilinmiyor',
-        };
-      }).toList();
+      salesAndQuotesData = combined;
     });
-
-    // fetchSalesAndQuotesData fonksiyonunu burada çağırıyoruz
-    fetchSalesAndQuotesData();
+  }
+  Future<void> _fetchAllUsers() async {
+    var snap = await FirebaseFirestore.instance.collection('users').get();
+    setState(() {
+      allSalespersons = snap.docs
+          .map((d) => (d.data()['fullName'] as String?) ?? d.id)
+          .toList();
+    });
   }
 
+  void _listenToTemporarySelections() {
+    FirebaseFirestore.instance
+        .collection('temporarySelections')
+        .snapshots()
+        .listen((snapshot) {
+      List<Map<String, String>> list = [];
+      for (var doc in snapshot.docs) {
+        list.add({
+          'currentId': doc.id,
+          'customerName': doc.data()['customerName'] ?? '',
+          'totalAmount': (doc.data()['grandTotal']?.toString() ?? '0.00'),
+        });
+      }
+      setState(() {
+        temporarySelections = list;
+      });
+    });
+  }
 
   Future<void> fetchSalesAndQuotesData() async {
     var today = DateFormat('dd.MM.yyyy').format(DateTime.now());
@@ -174,62 +206,231 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         .snapshots();
   }
 
-  void showSalesDetails(String salespersonName, Map<String, dynamic> salesDetails) {
+  void showSalesDetails(String salespersonName) async {
+    final today = DateFormat('dd.MM.yyyy').format(DateTime.now());
+
+    // 1) O günün sales dokümanları
+    var salesSnap = await FirebaseFirestore.instance
+        .collection('sales')
+        .where('date', isEqualTo: today)
+        .where('salespersons', arrayContains: salespersonName)
+        .get();
+
+    // 2) O günün quotes dokümanları
+    var quotesSnap = await FirebaseFirestore.instance
+        .collection('quotes')
+        .where('date', isEqualTo: today)
+        .where('salesperson', isEqualTo: salespersonName)
+        .get();
+
+    // 3) sales ve quotes’ı customerName’e göre grupla
+    Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
+    for (var doc in [...salesSnap.docs, ...quotesSnap.docs]) {
+      final cust = doc.data()['customerName'] as String? ?? 'Bilinmeyen';
+      grouped.putIfAbsent(cust, () => []).add(doc);
+    }
+
+    // 4) BottomSheet’i göster
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (BuildContext context) {
+      builder: (_) {
         return FractionallySizedBox(
           heightFactor: 0.8,
-          child: Column(
+          child: ListView(
+            padding: EdgeInsets.all(16),
             children: [
-              Container(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  '$salespersonName - Satış Detayları',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+              Text(
+                '$salespersonName — Detaylar',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
-              Expanded(
-                child: ListView(
-                  children: salesDetails.entries.map<Widget>((entry) {
-                    String customerName = entry.key;
-                    var details = entry.value as Map<String, dynamic>;
-                    double totalAmount = details['totalAmount'] ?? 0.0;
+              SizedBox(height: 16),
 
-                    List<Map<String, dynamic>> products = List<Map<String, dynamic>>.from(details['products'] ?? []);
+              // Burada map ile dönüyoruz:
+              ...grouped.entries.map((entry) {
+                final cust = entry.key;
+                final docs = entry.value;
 
-                    return ExpansionTile(
-                      title: Text('$customerName - Toplam: ${totalAmount.toStringAsFixed(2)} TL'),
-                      children: [
-                        ...products.map<Widget>((product) {
-                          String productName = product['Detay'] ?? 'Ürün Bilgisi Yok';
-                          double unitPrice = double.tryParse(product['Adet Fiyatı']?.toString() ?? '0') ?? 0.0;
-                          int quantity = int.tryParse(product['Adet']?.toString() ?? '1') ?? 1;
-                          double totalPrice = double.tryParse(product['Toplam Fiyat']?.toString() ?? '0') ?? 0.0;
+                // Müşteri bazlı toplam tutar
+                final custTotal = docs.fold<double>(0.0, (sum, doc) {
+                  final data = doc.data()! as Map<String, dynamic>;
+                  final a = data['amount'];
+                  if (a is num)    return sum + a.toDouble();
+                  if (a is String) return sum + (double.tryParse(a) ?? 0.0);
+                  return sum;
+                });
 
-                          return ListTile(
-                            title: Text(productName),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Adet Fiyatı: ${unitPrice.toStringAsFixed(2)} TL'),
-                                Text('Adet: $quantity'),
-                                Text('Toplam Fiyat: ${totalPrice.toStringAsFixed(2)} TL'),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        Divider(color: Colors.black, thickness: 1),
-                        ListTile(
-                          title: Text('Genel Toplam'),
-                          subtitle: Text('${totalAmount.toStringAsFixed(2)} TL'),
+                return ExpansionTile(
+                  title: Text('$cust — Toplam: ${custTotal.toStringAsFixed(2)} TL'),
+                  children: docs.expand<Widget>((doc) {
+                    final data = doc.data()! as Map<String, dynamic>;
+                    final type     = data['type'] as String? ?? '';
+                    final products = (data['products'] as List<dynamic>?) ?? [];
+
+                    return <Widget>[
+                      // Satış mı teklif mi başlığı
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          type == 'Teklif' ? '— TEKLİF —' : '— SATIŞ —',
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
-                      ],
-                    );
+                      ),
+                      // Ürünler
+                      ...products.map<Widget>((p) {
+                        final detay   = p['Detay']?.toString()      ?? '';
+                        final adet    = p['Adet']?.toString()        ?? '0';
+                        final fiyat   = p['Adet Fiyatı']?.toString() ?? '0';
+                        final toplamF = p['Toplam Fiyat']?.toString() ?? '0';
+
+                        // Nakit tahsilat mı bakıyoruz
+                        final label = (type == 'Hesaba İşle')
+                            ? 'Cari Hesaba İŞlendi'
+                            : null;
+
+                        return ListTile(
+                          title: Text(detay),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (label != null)
+                                Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Adet: $adet   Fiyat: $fiyat'),
+                              Text('Toplam: $toplamF'),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      Divider(thickness: 1),
+                    ];
                   }).toList(),
-                ),
+                );
+              }).toList(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+
+
+
+  /// Satış mı, teklif mi bakarak o günün detaylarını getirip alt pencerede gösterir.
+  /// Günün “sales” veya “quotes” kayıtlarını
+  /// satış elemanına göre getirir, müşteri bazında gruplar
+  /// ve alt alta ürün detaylarını BottomSheet’te gösterir.
+  void _showRecordDetails(String salespersonName, { required bool isSale }) async {
+    final today = DateFormat('dd.MM.yyyy').format(DateTime.now());
+    final collection = isSale ? 'sales' : 'quotes';
+    final userField  = isSale ? 'salespersons' : 'salesperson';
+    final typeLabel  = isSale ? 'SATIŞ' : 'TEKLİF';
+
+    // 1) Firestore’dan ilgili dokümanları çek
+    QuerySnapshot<Map<String, dynamic>> snap;
+    if (isSale) {
+      snap = await FirebaseFirestore.instance
+          .collection(collection)
+          .where('date', isEqualTo: today)
+          .where(userField, arrayContains: salespersonName)
+          .get();
+    } else {
+      snap = await FirebaseFirestore.instance
+          .collection(collection)
+          .where('date', isEqualTo: today)
+          .where(userField, isEqualTo: salespersonName)
+          .get();
+    }
+
+    // 2) customerName’e göre grupla
+    final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
+    for (var doc in snap.docs) {
+      final cust = doc.data()['customerName'] as String? ?? 'Bilinmeyen Müşteri';
+      grouped.putIfAbsent(cust, () => []).add(doc);
+    }
+
+    // 3) BottomSheet’i göster
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) {
+        return FractionallySizedBox(
+          heightFactor: 0.8,
+          child: ListView(
+            padding: EdgeInsets.all(16),
+            children: [
+              Text(
+                '$salespersonName — $typeLabel Detayları',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
+              SizedBox(height: 16),
+              // Her bir müşteri için bir ExpansionTile
+              ...grouped.entries.map((entry) {
+                final cust = entry.key;
+                final docs = entry.value;
+
+                // Müşteri bazlı toplam tutar
+                double custTotal = docs.fold(0.0, (sum, d) {
+                  final data = d.data()!;              // <-- ! ile non-null assert
+                  final a = data['amount'];            // artık a kesinlikle non-null
+                  if (a is num)    return sum + a.toDouble();
+                  if (a is String) return sum + (double.tryParse(a) ?? 0.0);
+                  return sum;
+                });
+
+
+                return ExpansionTile(
+                  title: Text('$cust — Toplam: ${custTotal.toStringAsFixed(2)} TL'),
+                  children: docs
+                      .expand<Widget>((doc) {
+                    final data = doc.data();
+                    final products = (data['products'] as List<dynamic>?) ?? [];
+
+                    return <Widget>[
+                      // Teklif mi satış mı başlığı
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          typeLabel == 'TEKLİF' ? '— TEKLİF —' : '— SATIŞ —',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      // Ürünler
+                      ...products.map<Widget>((p) {
+                        final detay     = p['Detay']?.toString()       ?? '';
+                        final adet      = p['Adet']?.toString()         ?? '0';
+                        final fiyat     = p['Adet Fiyatı']?.toString()  ?? '0';
+                        final toplamF   = p['Toplam Fiyat']?.toString() ?? '0';
+                        // Eğer satış ve type==“Hesaba İşle” ise “N.tahsilat” etiketi:
+                        String? label;
+                        if (data['type'] == 'Hesaba İşle') {
+                          label = 'Cari Hesaba İşlendi';
+                        } else if (data['type'] == 'Nakit Tahsilat') {
+                          label = 'Nakit Tahsilat';
+                        } else {
+                          label = null;
+                        }
+                        bool showTotal = toplamF != null && toplamF != '0' && toplamF != '';
+                        return ListTile(
+                          title: Text(detay),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (label != null)
+                                Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
+                              Text('Adet: $adet   Fiyat: $fiyat'),
+                              if (showTotal)
+                                Text('Toplam: $toplamF'),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      Divider(thickness: 1),
+                    ];
+                  })
+                      .toList(), // expand → Iterable<Widget>, sonra toList
+                );
+              }).toList(),
             ],
           ),
         );
@@ -244,8 +445,8 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   @override
   Widget build(BuildContext context) {
     // Satış elemanlarının listesini salesAndQuotesData'dan alıyoruz
-    List<String> salespersons = salesAndQuotesData.keys.toList();
 
+    List<String> salespersons = allSalespersons;
     return Scaffold(
       appBar: CustomAppBar(title: 'Coşkun Sızdırmazlık'),
       endDrawer: CustomDrawer(),
@@ -254,129 +455,76 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         child: Stack(
           children: [
             // Mevcut StreamBuilder'ınız burada kalıyor
-            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-              stream: FirebaseFirestore.instance.collection('temporarySelections').snapshots(),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return Center(child: CircularProgressIndicator());
-                }
+            Positioned(
+              top: 21,
+              left: 0,
+              right: 0,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: temporarySelections.map((customer) {
+                    final docId = customer['currentId']!;  // Firestore doc ID
+                    return GestureDetector(
+                      onTap: () {
+                        final docId = customer['currentId']!;
 
-                List<Map<String, String>> temporarySelections = [];
-
-                for (var doc in snapshot.data!.docs) {
-                  String documentId = doc.id; // current ID'sini alın
-                  String customerName = doc.data()?['customerName'] ?? 'Müşteri Seçilmedi';
-                  String totalAmount = '0.00 TL';
-
-                  var products = doc.data()?['products'] as List<dynamic>?;
-                  if (products != null) {
-                    var genelToplamEntry = products.firstWhere(
-                          (product) => product['Adet Fiyatı'] == 'Genel Toplam',
-                      orElse: () => null,
-                    );
-                    if (genelToplamEntry != null) {
-                      totalAmount = genelToplamEntry['Toplam Fiyat'] ?? '0.00';
-                    }
-                  }
-
-                  // Mavi kutucuk verilerini doldurun
-                  temporarySelections.add({
-                    'customerName': customerName,
-                    'totalAmount': totalAmount,
-                    'currentId': documentId, // current ID'sini burada saklayın
-                  });
-                }
-
-                return Positioned(
-                  top: 21.0,
-                  left: 0.0,
-                  right: 0.0,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: temporarySelections.map((customer) {
-                        // Mavi kutucuklar için GestureDetector
-                        return GestureDetector(
-                          onTap: () async {
-                            print("Mavi kutuya tıklandı!");
-
-                            // `currentId` değerini mavi kutucukta kullanıyoruz
-                            String? documentId = customer['currentId']; // Müşteriye göre currentX field'ı
-
-                            if (documentId != null) {
-                              print("Document ID: $documentId");
-
-                              DocumentSnapshot<Map<String, dynamic>> currentData = await FirebaseFirestore.instance
-
-
-                                  .collection('temporarySelections')
-                                  .doc(documentId)
-                                  .get();
-
-                              if (currentData.exists) {
-                                print("Document data mevcut!");
-
-                                // ScanScreen sayfasına git
-                                print("ScanScreen'e yönlendirme yapılacak, Document ID: $documentId");
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => ScanScreen(
-                                      onCustomerProcessed: (data) {},
-                                      documentId: documentId,
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                print("Veri mevcut değil, currentX bulunamadı.");
-                              }
-                            } else {
-                              print("Müşteri field bilgisi bulunamadı.");
-                            }
-                          },
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 8.0),
-                            width: (MediaQuery.of(context).size.width - 56) / 4,
-                            child: Card(
-                              color: const Color(0xFF0C2B40),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              elevation: 5,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(height: 12.0),
-                                  Text(
-                                    customer['customerName']!,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 12,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  SizedBox(height: 4.0),
-                                  Text(
-                                    'Toplam Tutar: ${customer['totalAmount']}',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ScanScreen(
+                              onCustomerProcessed: (data) {},
+                              documentId: docId,  // ← burası docId olacak
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                );
-              },
+                        ).then((_) {
+                          _loadHeaderData();
+                          _listenToTemporarySelections();
+                        });
+
+
+                      },
+                      child: Card(
+                        color: const Color(0xFF0C2B40),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        elevation: 5,
+                        child: Container(
+                          width: (MediaQuery.of(context).size.width - 56) / 4,
+                          padding: EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                customer['customerName']!,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Toplam Tutar: ${customer['totalAmount']}',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             ),
+
+
 
             // Ürün Tara butonunuz burada kalıyor
 
@@ -386,42 +534,36 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
               left: MediaQuery.of(context).size.width / 2 - 60,
               child: GestureDetector(
                 onTap: () async {
-                  // Yeni müşteri işlemleri için currentX kullanılacak
-                  var temporarySelections = FirebaseFirestore.instance.collection('temporarySelections');
-                  var querySnapshot = await temporarySelections.get();
-
-                  List<String> existingCurrentFields = querySnapshot.docs.map((doc) => doc.id).toList();
-
-                  int maxCurrentNumber = 1;
-
-                  for (var field in existingCurrentFields) {
-                    if (field.startsWith('current')) {
-                      String numberStr = field.replaceAll('current', '');
-                      int? number = int.tryParse(numberStr);
-                      if (number != null && number >= maxCurrentNumber) {
-                        maxCurrentNumber = number + 1;
-                      }
+                  // 1) Yeni currentX oluşturma
+                  var tmpColl = FirebaseFirestore.instance.collection('temporarySelections');
+                  var querySnapshot = await tmpColl.get();
+                  int maxNum = 1;
+                  for (var doc in querySnapshot.docs) {
+                    if (doc.id.startsWith('current')) {
+                      int? n = int.tryParse(doc.id.replaceAll('current', ''));
+                      if (n != null && n >= maxNum) maxNum = n + 1;
                     }
                   }
-
-                  String newCurrentField = 'current$maxCurrentNumber';
-
-                  // Yeni müşteri için yeni currentX alanını oluştur
-                  await temporarySelections.doc(newCurrentField).set({
+                  String newCurrentField = 'current$maxNum';
+                  await tmpColl.doc(newCurrentField).set({
                     'customerName': '',
                     'products': [],
                   });
 
-                  // Yeni oluşturulan currentX field'ını ScanScreen'e geçiyoruz
+                  // 2) ScanScreen'e geç ve geri döndüğünde header'ı yenile
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ScanScreen(
                         onCustomerProcessed: (data) {},
-                        documentId: newCurrentField, // newCurrentField is passed here
+                        documentId: newCurrentField,
                       ),
                     ),
-                  );
+                  ).then((_) {
+                    // ScanScreen kapatıldıktan sonra çalışır:
+                    _loadHeaderData();
+                    _listenToTemporarySelections();
+                  });
                 },
                 child: Container(
                   decoration: BoxDecoration(
@@ -457,6 +599,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 ),
               ),
             ),
+
 
             // [Bu bölümü aynen koruyabilirsiniz]
 
@@ -518,34 +661,40 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                             ]),
                             ...salespersons.map((salespersonName) {
                               var data = salesAndQuotesData[salespersonName] ?? {};
-                              var userSalesDetails = data['salesDetails'] ?? {};
 
                               return TableRow(children: [
+                                // 1. sütun: satış elemanı adı
                                 TableCell(
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: InkWell(
-                                      onTap: () {
-                                        showSalesDetails(salespersonName, userSalesDetails);
-                                      },
-                                      child: Text(salespersonName),
+                                    child: Text(salespersonName),
+                                  ),
+                                ),
+
+                                // 2. sütun: satış sayısı, tıklanınca satış detaylarını getir
+                                TableCell(
+                                  child: InkWell(
+                                    onTap: () => _showRecordDetails(salespersonName, isSale: true),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Text((data['salesCount'] ?? 0).toString()),
                                     ),
                                   ),
                                 ),
+
+                                // 3. sütun: teklif sayısı, tıklanınca teklif detaylarını getir
                                 TableCell(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(8.0),
-                                    child: Text((data['salesCount'] ?? 0).toString()),
-                                  ),
-                                ),
-                                TableCell(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(8.0),
-                                    child: Text((data['quotesCount'] ?? 0).toString()),
+                                  child: InkWell(
+                                    onTap: () => _showRecordDetails(salespersonName, isSale: false),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8.0),
+                                      child: Text((data['quotesCount'] ?? 0).toString()),
+                                    ),
                                   ),
                                 ),
                               ]);
                             }).toList(),
+
 
                           ],
                         ),
