@@ -79,6 +79,25 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
     });
   }
 
+  Future<Map<String, dynamic>> getQuotesForDate(DateTime date) async {
+    final start = DateTime(date.year, date.month, date.day, 0, 0, 0);
+    final end   = DateTime(date.year, date.month, date.day, 23, 59, 59);
+    var snap = await FirebaseFirestore.instance
+        .collection('quotes')
+        .where('date', isGreaterThanOrEqualTo: start)
+        .where('date', isLessThanOrEqualTo: end)
+        .get();
+    Map<String, dynamic> data = {};
+    for (var doc in snap.docs) {
+      final createdBy = doc.data()['createdBy'] ?? 'Bilinmeyen';
+      data[createdBy] ??= {'count': 0, 'totalAmount': 0.0};
+      data[createdBy]['count']++;
+      // Ürün toplamı topla...
+    }
+    return data;
+  }
+
+
   Future<void> fetchSalesAndQuotesData() async {
     var today = DateFormat('dd.MM.yyyy').format(DateTime.now());
 
@@ -217,11 +236,17 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         .get();
 
     // 2) O günün quotes dokümanları
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    final todayEnd   = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
     var quotesSnap = await FirebaseFirestore.instance
         .collection('quotes')
-        .where('date', isEqualTo: today)
-        .where('salesperson', isEqualTo: salespersonName)
+        .where('date', isGreaterThanOrEqualTo: todayStart)
+        .where('date', isLessThanOrEqualTo: todayEnd)
+        .where('createdBy', isEqualTo: salespersonName)
         .get();
+
 
     // 3) sales ve quotes’ı customerName’e göre grupla
     Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
@@ -230,7 +255,6 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
       grouped.putIfAbsent(cust, () => []).add(doc);
     }
 
-    // 4) BottomSheet’i göster
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -245,19 +269,21 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 16),
-
-              // Burada map ile dönüyoruz:
               ...grouped.entries.map((entry) {
                 final cust = entry.key;
                 final docs = entry.value;
 
-                // Müşteri bazlı toplam tutar
+                // *** Müşteri bazlı toplam tutar ***
                 final custTotal = docs.fold<double>(0.0, (sum, doc) {
                   final data = doc.data()! as Map<String, dynamic>;
-                  final a = data['amount'];
-                  if (a is num)    return sum + a.toDouble();
-                  if (a is String) return sum + (double.tryParse(a) ?? 0.0);
-                  return sum;
+                  final products = (data['products'] as List<dynamic>?) ?? [];
+                  double productsTotal = products.fold(0.0, (pSum, p) {
+                    final toplam = p['Toplam Fiyat'];
+                    if (toplam is num) return pSum + toplam.toDouble();
+                    if (toplam is String) return pSum + (double.tryParse(toplam) ?? 0.0);
+                    return pSum;
+                  });
+                  return sum + productsTotal;
                 });
 
                 return ExpansionTile(
@@ -267,8 +293,15 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                     final type     = data['type'] as String? ?? '';
                     final products = (data['products'] as List<dynamic>?) ?? [];
 
+                    // **SATIŞ BLOĞU TOPLAMI**
+                    double salesBlockTotal = products.fold(0.0, (sum, p) {
+                      final toplam = p['Toplam Fiyat'];
+                      if (toplam is num) return sum + toplam.toDouble();
+                      if (toplam is String) return sum + (double.tryParse(toplam) ?? 0.0);
+                      return sum;
+                    });
+
                     return <Widget>[
-                      // Satış mı teklif mi başlığı
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
@@ -276,17 +309,21 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                      // Ürünler
                       ...products.map<Widget>((p) {
                         final detay   = p['Detay']?.toString()      ?? '';
                         final adet    = p['Adet']?.toString()        ?? '0';
                         final fiyat   = p['Adet Fiyatı']?.toString() ?? '0';
                         final toplamF = p['Toplam Fiyat']?.toString() ?? '0';
 
-                        // Nakit tahsilat mı bakıyoruz
-                        final label = (type == 'Hesaba İşle')
-                            ? 'Cari Hesaba İŞlendi'
-                            : null;
+                        // Etiket kontrolü
+                        String? label;
+                        if (type == 'Hesaba İşle') {
+                          label = 'Cari Hesaba Kaydedildi';
+                        } else if (type == 'Nakit Tahsilat' || type == 'N.Tahsilat') {
+                          label = 'Nakit Tahsilat';
+                        } else {
+                          label = null;
+                        }
 
                         return ListTile(
                           title: Text(detay),
@@ -301,6 +338,18 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                           ),
                         );
                       }).toList(),
+                      // *** SATIŞ BLOĞU TOPLAMINI GÖSTER ***
+                      Padding(
+                        padding: const EdgeInsets.only(left: 12.0, top: 2.0, bottom: 8.0),
+                        child: Text(
+                          'Satış Toplamı: ${salesBlockTotal.toStringAsFixed(2)} TL',
+                          style: TextStyle(
+                            color: Colors.deepOrange,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
                       Divider(thickness: 1),
                     ];
                   }).toList(),
@@ -311,6 +360,8 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
         );
       },
     );
+
+
   }
 
 
@@ -320,7 +371,7 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
   /// Günün “sales” veya “quotes” kayıtlarını
   /// satış elemanına göre getirir, müşteri bazında gruplar
   /// ve alt alta ürün detaylarını BottomSheet’te gösterir.
-  void _showRecordDetails(String salespersonName, { required bool isSale }) async {
+  void _showRecordDetails(String salespersonName, {required bool isSale}) async {
     final today = DateFormat('dd.MM.yyyy').format(DateTime.now());
     final collection = isSale ? 'sales' : 'quotes';
     final userField  = isSale ? 'salespersons' : 'salesperson';
@@ -341,6 +392,25 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
           .where(userField, isEqualTo: salespersonName)
           .get();
     }
+
+    Future<List<QueryDocumentSnapshot>> fetchSalesAndQuotes(String salespersonName) async {
+      final salesSnapshot = await FirebaseFirestore.instance
+          .collection('sales')
+          .where('salespersons', arrayContains: salespersonName)
+          .get();
+
+      final quotesSnapshot = await FirebaseFirestore.instance
+          .collection('quotes')
+          .where('salesperson', isEqualTo: salespersonName)
+          .get();
+
+      final allDocs = <QueryDocumentSnapshot>[];
+      allDocs.addAll(salesSnapshot.docs);
+      allDocs.addAll(quotesSnapshot.docs);
+
+      return allDocs;
+    }
+
 
     // 2) customerName’e göre grupla
     final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>> grouped = {};
@@ -364,53 +434,64 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 16),
-              // Her bir müşteri için bir ExpansionTile
               ...grouped.entries.map((entry) {
                 final cust = entry.key;
                 final docs = entry.value;
 
                 // Müşteri bazlı toplam tutar
                 double custTotal = docs.fold(0.0, (sum, d) {
-                  final data = d.data()!;              // <-- ! ile non-null assert
-                  final a = data['amount'];            // artık a kesinlikle non-null
-                  if (a is num)    return sum + a.toDouble();
-                  if (a is String) return sum + (double.tryParse(a) ?? 0.0);
-                  return sum;
+                  final data = d.data()!;
+                  final products = (data['products'] as List<dynamic>?) ?? [];
+                  double productsTotal = products.fold(0.0, (pSum, p) {
+                    final toplam = p['Toplam Fiyat'];
+                    if (toplam is num) return pSum + toplam.toDouble();
+                    if (toplam is String) return pSum + (double.tryParse(toplam) ?? 0.0);
+                    return pSum;
+                  });
+                  return sum + productsTotal;
                 });
-
 
                 return ExpansionTile(
                   title: Text('$cust — Toplam: ${custTotal.toStringAsFixed(2)} TL'),
-                  children: docs
-                      .expand<Widget>((doc) {
+                  children: docs.expand<Widget>((doc) {
                     final data = doc.data();
+                    final type     = data['type'] as String? ?? '';
                     final products = (data['products'] as List<dynamic>?) ?? [];
+                    final quoteNumber = data['quoteNumber']?.toString();
+
+                    // Blok toplamı
+                    double blockTotal = products.fold(0.0, (sum, p) {
+                      final toplam = p['Toplam Fiyat'];
+                      if (toplam is num) return sum + toplam.toDouble();
+                      if (toplam is String) return sum + (double.tryParse(toplam) ?? 0.0);
+                      return sum;
+                    });
 
                     return <Widget>[
-                      // Teklif mi satış mı başlığı
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          typeLabel == 'TEKLİF' ? '— TEKLİF —' : '— SATIŞ —',
+                          type == 'Teklif' ? '— TEKLİF —' : '— SATIŞ —',
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
-                      // Ürünler
                       ...products.map<Widget>((p) {
-                        final detay     = p['Detay']?.toString()       ?? '';
-                        final adet      = p['Adet']?.toString()         ?? '0';
-                        final fiyat     = p['Adet Fiyatı']?.toString()  ?? '0';
-                        final toplamF   = p['Toplam Fiyat']?.toString() ?? '0';
-                        // Eğer satış ve type==“Hesaba İşle” ise “N.tahsilat” etiketi:
+                        final detay   = p['Detay']?.toString()      ?? '';
+                        final adet    = p['Adet']?.toString()        ?? '0';
+                        final fiyat   = p['Adet Fiyatı']?.toString() ?? '0';
+                        final toplamF = p['Toplam Fiyat']?.toString() ?? '0';
+
                         String? label;
-                        if (data['type'] == 'Hesaba İşle') {
-                          label = 'Cari Hesaba İşlendi';
-                        } else if (data['type'] == 'Nakit Tahsilat') {
+                        if (type == 'Hesaba İşle') {
+                          label = 'Cari Hesaba Kaydedildi';
+                        } else if (type == 'Nakit Tahsilat' || type == 'N.Tahsilat') {
                           label = 'Nakit Tahsilat';
+                        } else if (type == 'Teklif') {
+                          label = 'Teklif';
                         } else {
                           label = null;
                         }
-                        bool showTotal = toplamF != null && toplamF != '0' && toplamF != '';
+
                         return ListTile(
                           title: Text(detay),
                           subtitle: Column(
@@ -419,16 +500,55 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
                               if (label != null)
                                 Text(label, style: TextStyle(fontWeight: FontWeight.bold)),
                               Text('Adet: $adet   Fiyat: $fiyat'),
-                              if (showTotal)
-                                Text('Toplam: $toplamF'),
+                              Text('Toplam: $toplamF'),
                             ],
                           ),
                         );
                       }).toList(),
+                      // SAĞDA: Satış için toplam, teklif için hem toplam hem teklif no!
+                      Row(
+                        children: [
+                          Spacer(),
+                          if (type == 'Teklif' && quoteNumber != null)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'TEKLİF TOPLAMI: ${blockTotal.toStringAsFixed(2)} TL',
+                                  style: TextStyle(
+                                    color: Colors.indigo,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                                Text(
+                                  'TEKLİF NO: $quoteNumber',
+                                  style: TextStyle(
+                                    color: Colors.teal,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    letterSpacing: 1.1,
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
+                            Text(
+                              'SATIŞ TOPLAMI: ${blockTotal.toStringAsFixed(2)} TL',
+                              style: TextStyle(
+                                color: Colors.deepOrange,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
                       Divider(thickness: 1),
                     ];
-                  })
-                      .toList(), // expand → Iterable<Widget>, sonra toList
+                  }).toList(),
                 );
               }).toList(),
             ],
@@ -437,6 +557,8 @@ class _CustomHeaderScreenState extends State<CustomHeaderScreen> {
       },
     );
   }
+
+
 
 
 
